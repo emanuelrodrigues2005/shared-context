@@ -10,6 +10,7 @@ window.__ModuleLoader__.load({
     /** Stable Host mount; the boot global only supplies the daemon origin. */
     const PROXY_ROUTE = '/shared-context';
     const PROJECT_STORAGE_KEY = 'dsh.shared-context.project';
+    const CLOSED_STORAGE_KEY = 'dsh.shared-context.include-closed';
     const STAGES = ['backlog', 'todo', 'in_progress', 'review', 'done', 'cancelled'];
     const PRIORITIES = ['urgent', 'high', 'medium', 'low', 'none'];
 
@@ -60,6 +61,7 @@ window.__ModuleLoader__.load({
       'projects.error': 'Could not load Projects.',
       'board.error': 'Could not load the board.',
       'board.empty': 'Nothing here yet.',
+      'board.moveConflict': 'The Issue changed while moving; the board was refreshed.',
       'noProjects.title': 'No Projects yet',
       'noProjects.body': 'Create a Project in the full Shared Context app, then come back.',
       unassigned: 'Unassigned',
@@ -146,6 +148,7 @@ window.__ModuleLoader__.load({
       'projects.error': '加载项目失败。',
       'board.error': '加载看板失败。',
       'board.empty': '这里还没有内容。',
+      'board.moveConflict': '移动时 Issue 已发生变化，看板已刷新。',
       'noProjects.title': '还没有项目',
       'noProjects.body': '请在完整的 Shared Context 应用中创建项目，然后返回这里。',
       unassigned: '未指派',
@@ -247,10 +250,18 @@ window.__ModuleLoader__.load({
 .sc-column{display:flex;flex-direction:column;min-height:0;max-height:100%;width:262px;min-width:262px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-layer-1);overflow:hidden}
 .sc-columnHead{display:flex;align-items:center;gap:6px;padding:9px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--dsw-alias-label-secondary);flex:none}
 .sc-count{margin-left:auto;padding:1px 6px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);font-size:10.5px;letter-spacing:0;text-transform:none;font-variant-numeric:tabular-nums}
-.sc-columnBody{display:flex;flex-direction:column;gap:8px;padding:8px;min-height:0;overflow-y:auto;scrollbar-width:thin}
+.sc-columnBody{display:flex;flex-direction:column;gap:8px;padding:8px;min-height:72px;overflow-y:auto;scrollbar-width:thin}
 .sc-emptyColumn{padding:12px 10px;border:1px dashed var(--dsw-alias-border-l1);border-radius:8px;font-size:12px;color:var(--dsw-alias-label-secondary);text-align:center}
-.sc-card{display:block;width:100%;text-align:left;padding:9px 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);color:inherit;font:inherit;cursor:pointer}
+.sc-card{position:relative;display:block;width:100%;text-align:left;padding:9px 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);color:inherit;font:inherit;cursor:pointer}
 .sc-card:hover{border-color:var(--dsw-alias-border-l2)}
+.sc-card:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
+.sc-card.has-module-color::before{content:'';position:absolute;top:7px;bottom:7px;left:0;width:3px;border-radius:0 3px 3px 0;background:var(--sc-module-color);pointer-events:none}
+.sc-card[draggable=true]{cursor:grab}
+.sc-card[draggable=true]:active{cursor:grabbing}
+.sc-card.is-dragging{opacity:.4}
+.sc-card.is-dropBefore{box-shadow:inset 0 2px 0 var(--dsw-alias-brand-primary)}
+.sc-column.is-dropTarget{border-color:var(--dsw-alias-brand-primary)}
+.sc-columnBody.is-dropEnd{box-shadow:inset 0 -2px 0 var(--dsw-alias-brand-primary)}
 .sc-cardTop{display:flex;align-items:center;gap:6px;min-height:16px;font-size:11px;color:var(--dsw-alias-label-secondary);min-width:0}
 .sc-key{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:600;font-size:10.5px}
 .sc-priority{padding:1px 5px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
@@ -356,6 +367,24 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /** Read the persisted Closed-column toggle; defaults to hidden. */
+    function readStoredClosed() {
+      try {
+        return window.localStorage.getItem(CLOSED_STORAGE_KEY) === '1';
+      } catch {
+        return false;
+      }
+    }
+
+    /** Persist the Closed-column toggle so it survives panel switches. */
+    function storeClosed(value) {
+      try {
+        window.localStorage.setItem(CLOSED_STORAGE_KEY, value ? '1' : '0');
+      } catch {
+        /* storage can be unavailable; the toggle is then per visit */
+      }
+    }
+
     class ApiError extends Error {
       constructor(status, code, message) {
         super(message);
@@ -456,6 +485,20 @@ window.__ModuleLoader__.load({
         .slice(0, 2);
     }
 
+    /**
+     * Accept only CSS hex notation for a Module accent. Module colors come from
+     * the standalone app's color input; anything else is ignored rather than
+     * fed into `background` as an arbitrary CSS value.
+     *
+     * @param {unknown} value - the Module's stored color.
+     * @returns {string | null} a safe hex color, or null.
+     */
+    function normalizeModuleColor(value) {
+      if (typeof value !== 'string') return null;
+      const color = value.trim();
+      return /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(color) ? color : null;
+    }
+
     function appPath(path) {
       const { baseUrl } = bootConfig();
       return `${baseUrl}${path}`;
@@ -482,6 +525,66 @@ window.__ModuleLoader__.load({
       if (value === null || value === undefined) return '—';
       if (typeof value === 'object') return '[object]';
       return String(value);
+    }
+
+    /**
+     * Position for a card dropped at `overIndex` in `issues`, mirroring the
+     * standalone board's 1024 spacing: before the first, after the last, or
+     * halfway between the two neighbours.
+     *
+     * @param {Array<{position:number}>} issues - target column without the dragged card.
+     * @param {number} overIndex - insertion index in that list.
+     * @returns {number} the persisted position value.
+     */
+    function computeDropPosition(issues, overIndex) {
+      if (issues.length === 0) return 1024;
+      if (overIndex <= 0) return issues[0].position - 1024;
+      if (overIndex >= issues.length) return issues[issues.length - 1].position + 1024;
+      const before = issues[overIndex - 1];
+      const after = issues[overIndex];
+      return (before.position + after.position) / 2;
+    }
+
+    /**
+     * Apply one optimistic move to a BoardResult, keeping the column order and
+     * its displayed count in sync with the server's `sort=position` ordering.
+     *
+     * @param {object} board - current board payload.
+     * @param {object} issue - the moved card as currently rendered.
+     * @param {string} stage - target Stage.
+     * @param {number} position - target position.
+     * @returns {object} the updated board payload.
+     */
+    function moveIssueInBoard(board, issue, stage, position) {
+      const moved = { ...issue, stage, position };
+      const columns = board.columns.map((column) => {
+        const issues = column.issues.filter((entry) => entry.id !== issue.id);
+        if (column.stage === stage) {
+          issues.push(moved);
+          issues.sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
+        }
+        return { ...column, issues, count: issues.length };
+      });
+      return { ...board, columns };
+    }
+
+    /**
+     * Patch one card in place after the daemon confirms a move, so a second
+     * drag before the refetch settles carries the fresh revision.
+     *
+     * @param {object} board - current board payload.
+     * @param {string} issueId - Issue id to patch.
+     * @param {object} patch - card fields to merge.
+     * @returns {object} the updated board payload.
+     */
+    function patchBoardIssue(board, issueId, patch) {
+      return {
+        ...board,
+        columns: board.columns.map((column) => ({
+          ...column,
+          issues: column.issues.map((entry) => (entry.id === issueId ? { ...entry, ...patch } : entry)),
+        })),
+      };
     }
 
     /* ── icons ─────────────────────────────────────────────────────────────── */
@@ -599,18 +702,57 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function IssueCardView({ issue, t, onOpen }) {
+    function IssueCardView({
+      issue,
+      t,
+      onOpen,
+      onDragStart,
+      onDragEnd,
+      onDragOver,
+      onDrop,
+      dropBefore = false,
+      dragging = false,
+      draggable = true,
+    }) {
       const children = issue.child_progress || null;
       const childTotal = children ? children.total : 0;
       const childDone = children ? children.done + children.cancelled : 0;
       const percent = childTotal > 0 ? Math.round((childDone / childTotal) * 100) : 0;
+      const moduleColor = normalizeModuleColor(issue.module && issue.module.color);
       return h(
-        'button',
+        'div',
         {
-          type: 'button',
-          className: 'sc-card',
+          role: 'button',
+          tabIndex: 0,
+          className: `sc-card${dragging ? ' is-dragging' : ''}${dropBefore ? ' is-dropBefore' : ''}${moduleColor ? ' has-module-color' : ''}`,
+          style: moduleColor ? { '--sc-module-color': moduleColor } : undefined,
           'data-issue-key': issue.key,
+          draggable: draggable !== false,
+          onDragStart: (event) => {
+            if (typeof onDragStart === 'function') onDragStart(issue, event);
+          },
+          onDragEnd: (event) => {
+            if (typeof onDragEnd === 'function') onDragEnd(event);
+          },
+          onDragOver: (event) => {
+            if (typeof onDragOver !== 'function') return;
+            event.preventDefault();
+            event.stopPropagation();
+            if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+            onDragOver(issue, event);
+          },
+          onDrop: (event) => {
+            if (typeof onDrop !== 'function') return;
+            event.preventDefault();
+            event.stopPropagation();
+            onDrop(issue, event);
+          },
           onClick: () => onOpen(issue),
+          onKeyDown: (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return;
+            event.preventDefault();
+            onOpen(issue);
+          },
         },
         h(
           'span',
@@ -650,10 +792,52 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function BoardColumnView({ column, t, onOpen }) {
+    function BoardColumnView({
+      column,
+      t,
+      onOpen,
+      dragTarget = null,
+      draggingKey = null,
+      movingKeys = [],
+      onCardDragStart,
+      onCardDragEnd,
+      onCardDragOver,
+      onCardDrop,
+      onColumnDragOver,
+      onColumnDrop,
+      onColumnDragLeave,
+    }) {
+      const isDropTarget = dragTarget !== null && dragTarget !== undefined && dragTarget.stage === column.stage;
+      const overSelf = isDropTarget && dragTarget.issueId !== null && dragTarget.issueId === draggingKey;
+      const overIssueId = isDropTarget && !overSelf ? dragTarget.issueId : null;
+      const dropAtEnd = isDropTarget && !overSelf && (overIssueId === null || overIssueId === undefined);
       return h(
         'section',
-        { className: 'sc-column', 'aria-label': t(STAGE_LABEL[column.stage] || 'stage.backlog') },
+        {
+          className: `sc-column${isDropTarget ? ' is-dropTarget' : ''}`,
+          'aria-label': t(STAGE_LABEL[column.stage] || 'stage.backlog'),
+          onDragOver: (event) => {
+            if (typeof onColumnDragOver !== 'function') return;
+            event.preventDefault();
+            if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+            onColumnDragOver(column.stage);
+          },
+          onDrop: (event) => {
+            if (typeof onColumnDrop !== 'function') return;
+            event.preventDefault();
+            event.stopPropagation();
+            onColumnDrop(column.stage);
+          },
+          onDragLeave: (event) => {
+            if (typeof onColumnDragLeave !== 'function') return;
+            try {
+              if (event.relatedTarget !== null && event.currentTarget.contains(event.relatedTarget)) return;
+            } catch {
+              /* relatedTarget may be a non-Node target when the drag leaves the window */
+            }
+            onColumnDragLeave(column.stage);
+          },
+        },
         h(
           'header',
           { className: 'sc-columnHead' },
@@ -662,13 +846,29 @@ window.__ModuleLoader__.load({
         ),
         h(
           'div',
-          { className: 'sc-columnBody' },
+          { className: `sc-columnBody${dropAtEnd ? ' is-dropEnd' : ''}` },
           column.issues.length === 0
             ? h('div', { className: 'sc-emptyColumn' }, t('board.empty'))
-            : column.issues.map((issue) => h(IssueCardView, { key: issue.key, issue, t, onOpen })),
-          column.has_more
-            ? h('div', { className: 'sc-emptyColumn' }, t('count.more'))
-            : null,
+            : column.issues.map((issue) =>
+                h(IssueCardView, {
+                  key: issue.key,
+                  issue,
+                  t,
+                  onOpen,
+                  dropBefore: overIssueId === issue.id,
+                  dragging: draggingKey === issue.key,
+                  draggable: !movingKeys.includes(issue.key),
+                  onDragStart: onCardDragStart,
+                  onDragEnd: onCardDragEnd,
+                  onDragOver: (card) => {
+                    if (typeof onCardDragOver === 'function') onCardDragOver(column.stage, card.id);
+                  },
+                  onDrop: (card) => {
+                    if (typeof onCardDrop === 'function') onCardDrop(column.stage, card.id);
+                  },
+                }),
+              ),
+          column.has_more ? h('div', { className: 'sc-emptyColumn' }, t('count.more')) : null,
         ),
       );
     }
@@ -1070,7 +1270,7 @@ window.__ModuleLoader__.load({
       const [board, setBoard] = useState({ phase: 'idle', data: null, error: null });
       const [search, setSearch] = useState('');
       const [query, setQuery] = useState('');
-      const [includeClosed, setIncludeClosed] = useState(false);
+      const [includeClosed, setIncludeClosed] = useState(readStoredClosed);
       const [tick, setTick] = useState(0);
       const [selectedKey, setSelectedKey] = useState(null);
       const [detail, setDetail] = useState({ phase: 'idle', issue: null, error: null });
@@ -1078,6 +1278,12 @@ window.__ModuleLoader__.load({
       const [creating, setCreating] = useState(false);
       const [actionError, setActionError] = useState(null);
       const [busy, setBusy] = useState(false);
+      const [movingKeys, setMovingKeys] = useState([]);
+      const [dragTarget, setDragTarget] = useState(null);
+      const [dragKey, setDragKey] = useState(null);
+      const dragIssueRef = useRef(null);
+      const suppressClickRef = useRef(false);
+      const suppressTimerRef = useRef(null);
 
       const refresh = useCallback(() => setTick((value) => value + 1), []);
 
@@ -1198,6 +1404,152 @@ window.__ModuleLoader__.load({
         }
       }, []);
 
+      const toggleClosed = useCallback((checked) => {
+        setIncludeClosed(checked);
+        storeClosed(checked);
+      }, []);
+
+      const openIssue = useCallback((issue) => {
+        if (suppressClickRef.current) return;
+        setActionError(null);
+        setSelectedKey(issue.key);
+      }, []);
+
+      const endDrag = useCallback(() => {
+        dragIssueRef.current = null;
+        setDragKey(null);
+        setDragTarget(null);
+        if (suppressTimerRef.current !== null) window.clearTimeout(suppressTimerRef.current);
+        suppressTimerRef.current = window.setTimeout(() => {
+          suppressClickRef.current = false;
+          suppressTimerRef.current = null;
+        }, 150);
+      }, []);
+
+      const beginDrag = useCallback((issue, event) => {
+        if (suppressTimerRef.current !== null) {
+          window.clearTimeout(suppressTimerRef.current);
+          suppressTimerRef.current = null;
+        }
+        dragIssueRef.current = issue;
+        suppressClickRef.current = true;
+        setDragKey(issue.key);
+        setDragTarget({ stage: issue.stage, issueId: null });
+        if (event && event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+          try {
+            event.dataTransfer.setData('text/plain', issue.key);
+          } catch {
+            /* some engines require data; a failure here must not abort the drag */
+          }
+        }
+      }, []);
+
+      const dragOverCard = useCallback((stage, issueId) => {
+        setDragTarget((previous) =>
+          previous !== null && previous.stage === stage && previous.issueId === issueId
+            ? previous
+            : { stage, issueId },
+        );
+      }, []);
+
+      const dragOverColumn = useCallback((stage) => {
+        setDragTarget((previous) =>
+          previous !== null && previous.stage === stage && previous.issueId === null
+            ? previous
+            : { stage, issueId: null },
+        );
+      }, []);
+
+      const dragLeaveColumn = useCallback((stage) => {
+        setDragTarget((previous) => (previous !== null && previous.stage === stage ? null : previous));
+      }, []);
+
+      useEffect(() => {
+        const clearIfDragging = () => {
+          if (dragIssueRef.current !== null) endDrag();
+        };
+        window.addEventListener('dragend', clearIfDragging);
+        window.addEventListener('drop', clearIfDragging);
+        return () => {
+          window.removeEventListener('dragend', clearIfDragging);
+          window.removeEventListener('drop', clearIfDragging);
+        };
+      }, [endDrag]);
+
+      const performMove = useCallback(
+        async (issue, stage, position) => {
+          const snapshot = board.data;
+          setActionError(null);
+          if (snapshot !== null) {
+            setBoard((current) =>
+              current.data
+                ? {
+                    ...current,
+                    phase: 'refreshing',
+                    data: moveIssueInBoard(current.data, issue, stage, position),
+                    error: null,
+                  }
+                : current,
+            );
+          }
+          setMovingKeys((keys) => (keys.includes(issue.key) ? keys : [...keys, issue.key]));
+          try {
+            const payload = await api(`/api/issues/${encodeURIComponent(issue.key)}/move`, {
+              method: 'POST',
+              body: { expected_rev: issue.rev, stage, position },
+            });
+            const confirmed = payload && payload.issue ? payload.issue : null;
+            if (confirmed) {
+              setBoard((current) =>
+                current.data
+                  ? {
+                      ...current,
+                      data: patchBoardIssue(current.data, issue.id, {
+                        rev: confirmed.rev,
+                        stage: confirmed.stage,
+                        position: confirmed.position,
+                        updated_at: confirmed.updated_at,
+                      }),
+                    }
+                  : current,
+              );
+            }
+            setDetailTick((value) => value + 1);
+            setTick((value) => value + 1);
+          } catch (error) {
+            if (snapshot !== null) setBoard({ phase: 'ready', data: snapshot, error: null });
+            const conflict = error instanceof ApiError && error.status === 409;
+            setActionError(conflict ? t('board.moveConflict') : error instanceof Error ? error.message : String(error));
+            setTick((value) => value + 1);
+          } finally {
+            setMovingKeys((keys) => keys.filter((key) => key !== issue.key));
+          }
+        },
+        [board.data, t],
+      );
+
+      const dropOn = useCallback(
+        (stage, overIssueId) => {
+          const issue = dragIssueRef.current;
+          endDrag();
+          if (!issue || board.data === null) return;
+          if (overIssueId === issue.id) return;
+          const column = board.data.columns.find((entry) => entry.stage === stage);
+          if (!column) return;
+          const targetIssues = column.issues.filter((entry) => entry.id !== issue.id);
+          let overIndex = targetIssues.length;
+          if (overIssueId !== null && overIssueId !== undefined) {
+            const found = targetIssues.findIndex((entry) => entry.id === overIssueId);
+            if (found >= 0) overIndex = found;
+          }
+          const position = computeDropPosition(targetIssues, overIndex);
+          if (issue.stage === stage && Math.abs(issue.position - position) < 0.001) return;
+          void performMove(issue, stage, position);
+        },
+        [board.data, endDrag, performMove],
+      );
+
       const moveIssue = useCallback(
         (issue, stage) =>
           runAction(async () => {
@@ -1303,7 +1655,7 @@ window.__ModuleLoader__.load({
             h(
               'label',
               { className: 'sc-toggle' },
-              h('input', { type: 'checkbox', checked: includeClosed, onChange: (event) => setIncludeClosed(event.target.checked) }),
+              h('input', { type: 'checkbox', checked: includeClosed, onChange: (event) => toggleClosed(event.target.checked) }),
               h('span', null, t('showClosed')),
             ),
             h(
@@ -1337,6 +1689,19 @@ window.__ModuleLoader__.load({
               { className: 'sc-banner is-error', role: 'alert' },
               h('div', { className: 'sc-bannerBody' }, h('p', { className: 'sc-bannerTitle' }, t('projects.error')), h('p', null, projects.error || '')),
               h('button', { type: 'button', className: 'sc-button', onClick: refresh }, t('retry')),
+            )
+          : null,
+        actionError && !detailOpen && !creating
+          ? h(
+              'div',
+              { className: 'sc-banner is-error', role: 'alert' },
+              h(
+                'div',
+                { className: 'sc-bannerBody' },
+                h('p', { className: 'sc-bannerTitle' }, t('action.failed')),
+                h('p', null, actionError),
+              ),
+              h('button', { type: 'button', className: 'sc-button', onClick: () => setActionError(null) }, t('close')),
             )
           : null,
         h(
@@ -1382,10 +1747,17 @@ window.__ModuleLoader__.load({
                         key: column.stage,
                         column,
                         t,
-                        onOpen: (issue) => {
-                          setActionError(null);
-                          setSelectedKey(issue.key);
-                        },
+                        onOpen: openIssue,
+                        dragTarget,
+                        draggingKey: dragKey,
+                        movingKeys,
+                        onCardDragStart: beginDrag,
+                        onCardDragEnd: endDrag,
+                        onCardDragOver: dragOverCard,
+                        onCardDrop: dropOn,
+                        onColumnDragOver: dragOverColumn,
+                        onColumnDrop: dropOn,
+                        onColumnDragLeave: dragLeaveColumn,
                       }),
                     ),
             ),

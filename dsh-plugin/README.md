@@ -4,9 +4,11 @@ A DSH bundle that surfaces this repository's daemon in the Harness Web UI:
 
 - a **left-sidebar "Issues" entry** with an original glyph;
 - a **Shared Context panel** on the `main` slot: Project chips, the six-Stage
-  kanban board, Issue cards, an Issue drawer (description, fields, children,
-  links, attachments, comments, activity), Stage moves, comment posting, and a
-  new-Issue dialog;
+  kanban board, Issue cards with their Module's color accent down the left edge,
+  an Issue drawer (description, fields, children, links, attachments, comments,
+  activity), drag-and-drop Stage moves and in-column reordering, comment
+  posting, and a new-Issue dialog. The Closed toggle and selected Project
+  survive switching Harness panels;
 - a **Host-side same-origin proxy** at `/shared-context` so the browser half can
   read and mutate the daemon without adding CORS to `shared-context`.
 
@@ -85,14 +87,21 @@ node scripts/check-css.mjs           # parses the injected stylesheet and reject
 traversal rejection, the boot payload, and read-only calls to the real daemon.
 `check-registration.mjs` verifies the `main` key, the `sidebar.panellist` id,
 and matching `en`/`zh` key sets. `check-render.mjs` checks that the panel's
-markup renders. `check-css.mjs` parses the stylesheet with PostCSS and verifies
-container styling stays on theme tokens.
+markup renders, that Module colors are accepted only in safe hex form and land
+on the card edge, that cards are draggable, that drop positions and the
+optimistic move match the standalone board, and that the Closed toggle
+round-trips through storage. `check-css.mjs` parses the stylesheet with PostCSS
+and verifies container styling stays on theme tokens.
 
 ## Limits
 
 - The panel polls every 20 seconds; it does not consume the daemon's SSE feed.
-- Issue creation and Stage moves are available; editing titles/descriptions,
-  attachments upload, and drag-and-drop remain in the standalone UI.
+- Issue creation, Stage moves, drag-and-drop ordering, and commenting are
+  available. Editing titles/descriptions and attachment upload remain in the
+  standalone UI.
+- Drag-and-drop uses the native HTML5 drag API, so it needs a pointer; the Issue
+  drawer's Stage select is the keyboard path. Done/Cancelled columns appear when
+  the persisted Closed toggle is on.
 - The panel is read/write against the same SQLite database as every other
   client, so mutations still follow the daemon's `expected_rev` rules.
 

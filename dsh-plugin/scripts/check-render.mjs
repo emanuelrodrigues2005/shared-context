@@ -8,12 +8,13 @@ const { renderToStaticMarkup } = require('react-dom/server');
 
 const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8').replace(
   /return \{\r?\n\s+inject: \['slots', 'locale'\],/,
-  "globalThis.__SC_INTERNALS__ = { Page, DetailDrawer, CreateIssueDialog, BoardColumnView, IssueCardView };\n    return {\n      inject: ['slots', 'locale'],",
+  "globalThis.__SC_INTERNALS__ = { Page, DetailDrawer, CreateIssueDialog, BoardColumnView, IssueCardView, computeDropPosition, moveIssueInBoard, readStoredClosed, storeClosed, normalizeModuleColor };\n    return {\n      inject: ['slots', 'locale'],",
 );
 
 if (!source.includes('__SC_INTERNALS__')) throw new Error('could not expose internals');
 
 let captured;
+const localStore = new Map();
 const sandbox = {
   console,
   Intl,
@@ -22,7 +23,10 @@ const sandbox = {
   clearTimeout,
   window: {
     __ModuleLoader__: { load: (options) => { captured = options; } },
-    localStorage: { getItem: () => null, setItem: () => {} },
+    localStorage: {
+      getItem: (key) => (localStore.has(key) ? localStore.get(key) : null),
+      setItem: (key, value) => { localStore.set(key, String(value)); },
+    },
     addEventListener: () => {},
     removeEventListener: () => {},
   },
@@ -51,7 +55,7 @@ const issueCard = {
   id: 'i1', key: 'LLM-1', title: 'Remoção de secrets expostos e variáveis hardcoded',
   stage: 'review', priority: 'urgent', blocked: true, blocked_reason: 'Feature não implementada',
   assignee: { id: 'a1', name: 'Zauns', kind: 'human', can_read_images: true, color: '#247bbf' },
-  module: { id: 'm1', name: 'code-review-fix', slug: 'code-review-fix', color: null },
+  module: { id: 'm1', name: 'code-review-fix', slug: 'code-review-fix', color: '#247bbf' },
   attachment_count: 2, comment_count: 3,
   child_progress: { done: 1, active: 2, cancelled: 0, total: 3 },
   position: 1, rev: 3, updated_at: new Date(Date.now() - 3_600_000).toISOString(),
@@ -75,16 +79,58 @@ const detail = {
   latest_activity_id: 2,
 };
 
-const { Page, DetailDrawer, CreateIssueDialog, BoardColumnView, IssueCardView } =
+const { Page, DetailDrawer, CreateIssueDialog, BoardColumnView, IssueCardView, computeDropPosition, moveIssueInBoard, readStoredClosed, storeClosed, normalizeModuleColor } =
   sandbox.__SC_INTERNALS__;
 
 const renders = {
-  card: renderToStaticMarkup(React.createElement(IssueCardView, { issue: issueCard, t, onOpen: () => {} })),
+  card: renderToStaticMarkup(
+    React.createElement(IssueCardView, {
+      issue: issueCard,
+      t,
+      onOpen: () => {},
+      onDragStart: () => {},
+      onDragEnd: () => {},
+    }),
+  ),
+  invalidColorCard: renderToStaticMarkup(
+    React.createElement(IssueCardView, {
+      issue: { ...issueCard, module: { ...issueCard.module, color: 'url(https://example.test/color)' } },
+      t,
+      onOpen: () => {},
+    }),
+  ),
   column: renderToStaticMarkup(
     React.createElement(BoardColumnView, {
       column: { stage: 'review', count: 1, has_more: false, issues: [issueCard] },
       t,
       onOpen: () => {},
+      dragTarget: { stage: 'review', issueId: null },
+      draggingKey: null,
+      movingKeys: [],
+      onCardDragStart: () => {},
+      onCardDragEnd: () => {},
+      onCardDragOver: () => {},
+      onCardDrop: () => {},
+      onColumnDragOver: () => {},
+      onColumnDrop: () => {},
+      onColumnDragLeave: () => {},
+    }),
+  ),
+  columnBefore: renderToStaticMarkup(
+    React.createElement(BoardColumnView, {
+      column: { stage: 'review', count: 1, has_more: false, issues: [issueCard] },
+      t,
+      onOpen: () => {},
+      dragTarget: { stage: 'review', issueId: issueCard.id },
+      draggingKey: 'other-card',
+      movingKeys: [],
+      onCardDragStart: () => {},
+      onCardDragEnd: () => {},
+      onCardDragOver: () => {},
+      onCardDrop: () => {},
+      onColumnDragOver: () => {},
+      onColumnDrop: () => {},
+      onColumnDragLeave: () => {},
     }),
   ),
   drawer: renderToStaticMarkup(
@@ -124,10 +170,72 @@ const drawerChecks = [
   ['drawer shows stage select', renders.drawer.includes('<select')],
   ['drawer shows conflict error', renders.drawer.includes('conflict')],
   ['column shows card', renders.column.includes('LLM-1')],
+  ['card is draggable', renders.card.includes('draggable="true"')],
+  ['card shows its Module color', renders.card.includes('has-module-color') && renders.card.includes('--sc-module-color:#247bbf')],
+  ['invalid Module color is ignored', !renders.invalidColorCard.includes('has-module-color')],
+  ['column marks the drop target', renders.column.includes('is-dropTarget')],
+  ['column marks an end drop', renders.column.includes('is-dropEnd')],
+  ['card marks a before drop', renders.columnBefore.includes('is-dropBefore')],
   ['dialog shows form', renders.dialog.includes('<form')],
   ['page shows title', renders.page.includes('sc-title')],
 ];
 for (const [label, pass] of drawerChecks) {
+  console.log(`${pass ? 'ok' : 'FAIL'} - ${label}`);
+  if (!pass) process.exitCode = 1;
+}
+
+const positions = [
+  ['empty column', computeDropPosition([], 0), 1024],
+  ['before the first card', computeDropPosition([{ position: 1024 }], 0), 0],
+  ['between cards', computeDropPosition([{ position: 1024 }, { position: 2048 }], 1), 1536],
+  ['after the last card', computeDropPosition([{ position: 1024 }, { position: 2048 }], 2), 3072],
+];
+for (const [label, actual, expected] of positions) {
+  const pass = actual === expected;
+  console.log(`${pass ? 'ok' : 'FAIL'} - drop position ${label}`);
+  if (!pass) process.exitCode = 1;
+}
+
+const board = {
+  project: { key: 'LLM' },
+  columns: [
+    { stage: 'todo', count: 2, has_more: false, issues: [{ ...issueCard, id: 'a', position: 1024 }, { ...issueCard, id: 'b', position: 2048 }] },
+    { stage: 'review', count: 0, has_more: false, issues: [] },
+  ],
+};
+const movedBoard = moveIssueInBoard(board, board.columns[0].issues[0], 'review', 1024);
+const optimisticChecks = [
+  ['move removes the card from its source column', movedBoard.columns[0].issues.length === 1 && movedBoard.columns[0].count === 1],
+  ['move adds the card to the target column', movedBoard.columns[1].issues.length === 1 && movedBoard.columns[1].issues[0].id === 'a'],
+  ['move records the new Stage', movedBoard.columns[1].issues[0].stage === 'review'],
+];
+for (const [label, pass] of optimisticChecks) {
+  console.log(`${pass ? 'ok' : 'FAIL'} - ${label}`);
+  if (!pass) process.exitCode = 1;
+}
+
+const closedChecks = [
+  ['closed toggle defaults to hidden', readStoredClosed() === false],
+];
+storeClosed(true);
+closedChecks.push(['closed toggle persists on', readStoredClosed() === true]);
+storeClosed(false);
+closedChecks.push(['closed toggle persists off', readStoredClosed() === false]);
+for (const [label, pass] of closedChecks) {
+  console.log(`${pass ? 'ok' : 'FAIL'} - ${label}`);
+  if (!pass) process.exitCode = 1;
+}
+
+const colorChecks = [
+  ['six-digit hex is accepted', normalizeModuleColor('#247bbf') === '#247bbf'],
+  ['three-digit hex is accepted', normalizeModuleColor('#abc') === '#abc'],
+  ['four-digit hex is accepted', normalizeModuleColor('#abcd') === '#abcd'],
+  ['eight-digit hex is accepted', normalizeModuleColor('#247bbfcc') === '#247bbfcc'],
+  ['named colors are rejected', normalizeModuleColor('red') === null],
+  ['CSS functions are rejected', normalizeModuleColor('url(https://example.test/x)') === null],
+  ['missing colors are rejected', normalizeModuleColor(null) === null],
+];
+for (const [label, pass] of colorChecks) {
   console.log(`${pass ? 'ok' : 'FAIL'} - ${label}`);
   if (!pass) process.exitCode = 1;
 }
