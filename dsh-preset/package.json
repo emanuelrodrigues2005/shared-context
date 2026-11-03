@@ -1,0 +1,20 @@
+{
+  "name": "dsh-preset-shared-context",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared Context agent presets: an orchestrator that owns the issue tracker over MCP, plus implementer, reviewer, and researcher specialists it delegates to.",
+  "files": [
+    "cordis.patch.yml",
+    "README.md",
+    "scripts/*.mjs"
+  ],
+  "scripts": {
+    "check": "node scripts/check-mcp.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

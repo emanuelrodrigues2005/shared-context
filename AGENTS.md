@@ -24,6 +24,9 @@ A local, multi-project issue tracker and context service for coding agents, expo
 - `npm run test:docs` — glossary, ADR, plan-link, and schema guards.
 - `npm run build` — compile server and build UI.
 - `npm start` — run the built daemon.
+- `node dsh-plugin/scripts/check-host.mjs` — offline Host-half proxy checks (mock daemon + live read-only daemon).
+- `node dsh-plugin/scripts/check-registration.mjs` / `check-render.mjs` / `check-css.mjs` — verify slot registrations, render the panel components server-side, and parse the injected stylesheet.
+- `node dsh-preset/scripts/check-mcp.mjs` — verify the agent-preset bundle declarations and the live daemon MCP session (token, 23 tools, read-only call).
 - `npm run format` — Prettier.
 - `powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1` — register and start the `SharedContext` logon task (run `npm run build` first).
 - `powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-startup.ps1` — stop and unregister the logon task.
@@ -56,6 +59,8 @@ Implemented:
 - `src/web/lib/` — URL filter serialization, board position/move helpers, labels, byte formatting, and relative time.
 - `src/web/state/` — theme, density, collapsed columns, saved views, last/recent Projects, and recent Issues.
 - `src/web/` — React/Vite board UI with editable drawer, attachments, links, comments, children, conflict handling, settings, and a `Ctrl/Cmd+K` palette.
+- `dsh-plugin/` — DeepSeek Harness bundle `dsh-plugin-shared-context`: a Host half that mounts a stable same-origin `/shared-context` proxy over `/api` (CSRF handled Host-side; mutations guarded by `Sec-Fetch-Site` plus a marker header) and a Client half that adds a left-sidebar Issues entry and a board panel to the Harness Web UI. `dsh-plugin/README.md` documents install, config, and checks.
+- `dsh-preset/` — DeepSeek Harness bundle `dsh-preset-shared-context`: four agent presets. The orchestrator owns the tracker over the MCP client (bearer token read from the daemon config at activation) and delegates to tracker-free implementer, reviewer, and researcher presets through `agent_preset`. `dsh-preset/README.md` documents install, configuration, and checks.
 - `scripts/install-startup.ps1` + `scripts/uninstall-startup.ps1` — Task Scheduler logon task with a custom-data/config wrapper and `/healthz` verification.
 - `docs/restore.md` — stop, snapshot copy, WAL cleanup, attachment mirror, and verification steps.
 - `test/helpers/db.ts` — in-memory migrated database and seed.

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Shared Context",
+    "description": "A left-sidebar Issues board over the local shared-context daemon: projects, kanban stages, issue details, comments, and new issues."
+  }
+}

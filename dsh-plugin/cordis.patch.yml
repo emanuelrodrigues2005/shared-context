@@ -1,0 +1,8 @@
+# Shared Context bundle: one Host row that serves the same-origin proxy and the
+# browser panel. The Host plugin injects `webServer`; the browser half is
+# discovered from this package's `dsh.client` manifest.
+- insert:
+    - id: shared-context
+      name: dsh-plugin-shared-context
+      config:
+        baseUrl: http://127.0.0.1:4319

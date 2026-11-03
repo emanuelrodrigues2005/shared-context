@@ -1,0 +1,42 @@
+{
+  "name": "dsh-plugin-shared-context",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared Context issue tracker inside the DeepSeek Harness Web UI: a left-sidebar Issues entry over the local shared-context daemon.",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "scripts": {
+    "check": "node scripts/check-host.mjs && node scripts/check-registration.mjs && node scripts/check-render.mjs && node scripts/check-css.mjs",
+    "check:host": "node scripts/check-host.mjs",
+    "check:registration": "node scripts/check-registration.mjs",
+    "check:render": "node scripts/check-render.mjs",
+    "check:css": "node scripts/check-css.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  }
+}

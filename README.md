@@ -23,6 +23,8 @@ A local, multi-project issue tracker and context service for coding agents, expo
 - Editable Issue drawer: immediate Stage/Priority/Assignee/Module/Parent/Blocked updates, explicit title/description saves, conflict banner with reload/copy-draft, children creation, comments, delete dialog, attachments with thumbnails/upload/open/download/remove, links with add/remove, and activity.
 - `Ctrl/Cmd+K` command palette: debounced cross-Project search, recent Issues/Projects, Issue and Project jumps, and actions for new Issue, board, settings, and theme.
 - Project sidebar, setup flow, create-issue modal, and a full Project settings screen: name/description/root path, doc allowlist, Module manager with usage counts, Trash batch restore, backup status/Backup now, Markdown/JSON export, and empty-Project deletion.
+- DeepSeek Harness plugin (`dsh-plugin/`): a left-sidebar **Issues** entry and a Shared Context board panel inside the Harness Web UI, with Project chips, Stage columns, an Issue drawer, Stage moves, comments, and new-Issue creation.
+- DeepSeek Harness agent presets (`dsh-preset/`): a tracker-owning orchestrator that triages Issues and delegates to tracker-free implementer, reviewer, and researcher presets over the MCP tools.
 - Global settings: theme/density, reveal/copy/regenerate MCP token, server paths/version/uptime, startup and Reasonix snippets, and Actor capability editing.
 - Daily backups with catch-up, integrity verification, attachment mirroring, retention, and a documented restore procedure.
 - CSRF, host, and origin guards; SSE replay from the Activity cursor; `waitForChange`.
