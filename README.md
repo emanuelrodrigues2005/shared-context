@@ -54,6 +54,104 @@ powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-startup.ps1
 
 The daemon stores data under `%LOCALAPPDATA%\shared-context` by default. Override with `SHARED_CONTEXT_DATA_DIR` for a portable or test install.
 
+## DeepSeek Harness plugin (DSH)
+
+`dsh-plugin/` is a local DSH bundle that adds an **Issues** entry to the Harness
+sidebar and a Shared Context board panel: Project chips, Stage columns, colored
+Module accents, a draggable kanban, an Issue drawer, comments, and new-Issue
+creation. It reaches the daemon through a same-origin proxy on the Harness
+origin, so the daemon must be running. See
+[`dsh-plugin/README.md`](dsh-plugin/README.md) for the architecture and checks.
+
+### 1. Prepare the daemon
+
+```powershell
+npm install
+npm run build
+npm start
+```
+
+`npm start` is the built daemon. For development use `npm run dev`; for automatic
+startup use the logon task above (run `npm run build` first). Verify it:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:4319/healthz
+```
+
+### 2. Install the bundle in DSH
+
+You can install it from the DSH Web UI or ask the DSH agent.
+
+**From the Web UI**
+
+1. Select **Plugins** in the Harness left sidebar.
+2. Select **Add plugin** (or the arrow beside it → **Install a third-party plugin**).
+3. Enter the absolute path to this checkout's plugin directory:
+   `C:\Users\<you>\Documents\shared-context\dsh-plugin`
+4. Select **Install** and wait for the dialog to finish. The registry choice does
+   not matter for a local directory.
+5. Confirm `dsh-plugin-shared-context` appears under **Installed plugins**, is
+   switched on, and lists the row `shared-context`.
+
+**From the DSH agent**
+
+```text
+plugin_manager(action="install_bundle", target="C:\Users\<you>\Documents\shared-context\dsh-plugin")
+```
+
+This action needs Full access or an approval for that call, and it changes the
+current DSH profile for every session. A local directory install links this
+checkout: source edits are visible without reinstalling. Client changes need a
+page reload; Host changes need the row switched off and on, or a DSH restart.
+
+### 3. Reload and open the Issues panel
+
+1. Reload the Harness page (`Ctrl+R`) once so the browser loads the new client
+   module and the boot payload.
+2. Select **Issues** in the Harness left sidebar. The panel opens in the main
+   area and its subtitle shows **online** plus the daemon version.
+3. Pick a Project chip (the last used Project is restored automatically), then
+   use the board. Drag a card within a column to reorder it, or into another
+   column to change its Stage.
+4. Optionally enable **Closed** to show Done/Cancelled columns; that choice and
+   the selected Project persist across Harness panels and page reloads.
+
+### 4. Point the plugin at another daemon port (optional)
+
+The default is `http://127.0.0.1:4319`. Change `config.baseUrl` in
+[`dsh-plugin/cordis.patch.yml`](dsh-plugin/cordis.patch.yml), then reload the
+Host generation (switch the `shared-context` row off/on in Plugins, or restart
+DSH). Only loopback origins (`127.0.0.1`, `localhost`, `::1`) are accepted.
+
+### 5. Check the setup
+
+- Daemon: `Invoke-RestMethod http://127.0.0.1:4319/healthz`.
+- Proxy through the Harness: open `http://127.0.0.1:57891/shared-context/healthz`
+  in the same browser, replacing the port with the Harness GUI's port. It should
+  return the daemon's health JSON.
+- Plugin checks (run from this checkout):
+  `node dsh-plugin/scripts/check-host.mjs`,
+  `check-registration.mjs`, `check-render.mjs`, and `check-css.mjs`.
+
+**Troubleshooting**
+
+| Symptom | Fix |
+| --- | --- |
+| No **Issues** entry in the sidebar | Reload the page; confirm the bundle is switched on under **Plugins** and lists `shared-context`. |
+| Panel says offline or shows HTTP 404 | Start the daemon, check `baseUrl`, and confirm the `shared-context` row is enabled. |
+| Project list is empty | Create a Project in the full app (`Open full app`) and reload the panel. |
+| Drag does not move a card | Reload to get the current client; use a pointer, and enable **Closed** to reach Done/Cancelled. |
+| Mutation fails with 403 | Reload the panel; mutations must come from the same-origin panel (marker header or `Sec-Fetch-Site: same-origin`). |
+
+### 6. Update or remove
+
+- **Update:** edit `dsh-plugin/`; reload the page for client changes. For Host
+  changes, toggle the row off/on under **Plugins** (or restart DSH). A moved
+  checkout needs to be installed again from its new path.
+- **Remove:** open **Plugins**, select the bundle, and choose **Remove**, or run
+  `plugin_manager(action="remove_bundle", target="dsh-plugin-shared-context")`.
+  Issue data stays in `%LOCALAPPDATA%\shared-context`.
+
 ## Backup, export, and restore
 
 - Backups run daily at 03:00 local time, catch up on startup if the last successful backup is over 24 hours old, and can be run immediately from Project settings.
