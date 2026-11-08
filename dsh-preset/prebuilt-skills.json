@@ -1,0 +1,104 @@
+{
+  "architect": [
+    "codebase-design",
+    "improve-codebase-architecture",
+    "domain-modeling",
+    "documentation-and-adrs",
+    "api-and-interface-design",
+    "doubt-driven-development",
+    "writing-for-agents"
+  ],
+  "coder": [
+    "tdd",
+    "test-driven-development",
+    "incremental-implementation",
+    "implement",
+    "implement-spec",
+    "frontend-design",
+    "frontend-ui-engineering",
+    "web-design-guidelines",
+    "vercel-react-best-practices",
+    "vercel-composition-patterns",
+    "debugging-and-error-recovery",
+    "diagnosing-bugs",
+    "api-and-interface-design",
+    "security-and-hardening",
+    "code-simplification",
+    "performance-optimization",
+    "git-workflow-and-versioning",
+    "resolving-merge-conflicts",
+    "source-driven-development",
+    "webapp-testing"
+  ],
+  "database": [
+    "api-and-interface-design",
+    "security-and-hardening",
+    "performance-optimization",
+    "documentation-and-adrs",
+    "source-driven-development",
+    "doubt-driven-development"
+  ],
+  "devops": [
+    "ci-cd-and-automation",
+    "observability-and-instrumentation",
+    "security-and-hardening",
+    "shipping-and-launch",
+    "deploy-to-vercel",
+    "vercel-cli-with-tokens",
+    "documentation-and-adrs",
+    "source-driven-development"
+  ],
+  "planner": [
+    "planning-and-task-breakdown",
+    "to-spec",
+    "to-tickets",
+    "to-questionnaire",
+    "wayfinder",
+    "spec-driven-development",
+    "writing-issues",
+    "codebase-design",
+    "domain-modeling",
+    "grill-me"
+  ],
+  "researcher": [
+    "research",
+    "source-driven-development",
+    "ask-docs",
+    "find-skills",
+    "codebase-design",
+    "improve-codebase-architecture",
+    "domain-modeling",
+    "documentation-and-adrs",
+    "context-engineering"
+  ],
+  "reviewer": [
+    "code-review",
+    "code-review-and-quality",
+    "security-and-hardening",
+    "web-design-guidelines",
+    "writing-guidelines",
+    "performance-optimization",
+    "api-and-interface-design",
+    "code-simplification",
+    "documentation-and-adrs",
+    "doubt-driven-development"
+  ],
+  "security": [
+    "security-and-hardening",
+    "code-review",
+    "api-and-interface-design",
+    "observability-and-instrumentation",
+    "source-driven-development",
+    "doubt-driven-development"
+  ],
+  "tester": [
+    "tdd",
+    "test-driven-development",
+    "webapp-testing",
+    "browser-testing-with-devtools",
+    "debugging-and-error-recovery",
+    "diagnosing-bugs",
+    "performance-optimization",
+    "migrate-to-shoehorn"
+  ]
+}

@@ -342,8 +342,13 @@ function ServerSection({ config }: { config: ApiConfig }) {
 }
 
 function StartupSection({ config }: { config: ApiConfig }) {
-  const install = String.raw`powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1`;
-  const uninstall = String.raw`powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-startup.ps1`;
+  const isWindows = config.platform === 'win32';
+  const install = isWindows
+    ? String.raw`powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1`
+    : 'bash scripts/install-startup.sh';
+  const uninstall = isWindows
+    ? String.raw`powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-startup.ps1`
+    : 'bash scripts/uninstall-startup.sh';
   const reasonix = [
     '[[plugins]]',
     'name = "shared-context"',
@@ -361,12 +366,14 @@ function StartupSection({ config }: { config: ApiConfig }) {
       <div className="space-y-3">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] muted">
-            Install / remove the logon task
+            {isWindows ? 'Install / remove the logon task' : 'Install / remove the user service'}
           </p>
           <pre className="mt-1 overflow-x-auto rounded-md border border-subtle bg-[var(--surface-2)] p-2 font-mono text-[11px]">
             {install}
             {'\n'}
             {uninstall}
+            {'\n'}
+            {'npm run startup:install   # platform-neutral wrapper'}
           </pre>
         </div>
         <div>
@@ -378,9 +385,10 @@ function StartupSection({ config }: { config: ApiConfig }) {
           </pre>
         </div>
         <p className="text-[10px] muted">
-          The task does not run before logon; after a reboot the tracker is offline until
-          you sign in. Run <code className="font-mono">npm run build</code> before installing
-          or updating the task.
+          {isWindows
+            ? 'The task does not run before logon; after a reboot the tracker is offline until you sign in.'
+            : 'The unit is bound to graphical-session.target, so the tracker is offline until you sign in to the desktop.'}{' '}
+          Run <code className="font-mono">npm run build</code> before installing or updating it.
         </p>
       </div>
     </Section>

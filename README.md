@@ -30,7 +30,9 @@ A local, multi-project issue tracker and context service for coding agents, expo
 - CSRF, host, and origin guards; SSE replay from the Activity cursor; `waitForChange`.
 - 65 domain, HTTP, SSE, MCP, and concurrency tests, 5 docs/plan/schema guards, and a Playwright UI smoke suite run by `npm test`.
 
-UI smoke tests run with Playwright against the built daemon (`npm run test:ui`). Local runs use the installed Chrome channel; CI installs Chromium.
+UI smoke tests run with Playwright against the built daemon (`npm run test:ui`). They run
+on Playwright's bundled Chromium on every platform, so a branded Chrome install is never
+required: run `npm run test:ui:install` once. CI runs the same thing with system deps.
 
 ## Commands
 
@@ -45,14 +47,30 @@ npm run build      # dist/server + dist/web
 npm start          # built daemon
 ```
 
-Windows logon task (run `npm run build` first):
+Install the Playwright browser once (no branded browser is needed on any platform):
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1
-powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-startup.ps1
+```sh
+npm run test:ui:install
 ```
 
-The daemon stores data under `%LOCALAPPDATA%\shared-context` by default. Override with `SHARED_CONTEXT_DATA_DIR` for a portable or test install.
+Startup at logon, in the user session, on either platform (run `npm run build` first):
+
+```sh
+npm run startup:install     # Windows: Task Scheduler; Linux: systemd --user
+npm run startup:uninstall
+npm run startup:verify      # print the plan, change nothing
+```
+
+The platform scripts stay callable directly: `scripts/install-startup.ps1` on Windows,
+`scripts/install-startup.sh` on Linux. Both accept `--verify-only` and `--no-start`.
+
+The daemon stores data under `%LOCALAPPDATA%\shared-context` on Windows and
+`~/.local/share/shared-context` elsewhere. The config file is
+`%APPDATA%\shared-context\config.json` on Windows and
+`${XDG_CONFIG_HOME:-~/.config}/shared-context/config.json` elsewhere. Override
+either with `SHARED_CONTEXT_DATA_DIR` / `SHARED_CONTEXT_CONFIG` for a portable or
+test install. A config path written for the other platform is rejected with an
+explicit error instead of creating a literal `C:\Users\...` directory.
 
 ## DeepSeek Harness plugin (DSH)
 
@@ -65,29 +83,44 @@ origin, so the daemon must be running. See
 
 ### 1. Prepare the daemon
 
-```powershell
+```sh
 npm install
 npm run build
 npm start
 ```
 
 `npm start` is the built daemon. For development use `npm run dev`; for automatic
-startup use the logon task above (run `npm run build` first). Verify it:
+startup use `npm run startup:install` above (run `npm run build` first). Verify it:
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:4319/healthz
+```sh
+curl -s http://127.0.0.1:4319/healthz
 ```
 
-### 2. Install the bundle in DSH
+### 2. Install the bundles in DSH
 
-You can install it from the DSH Web UI or ask the DSH agent.
+Both bundles — the Web UI plugin and the agent presets — install the same way, into
+every profile of every DSH home on this machine:
 
-**From the Web UI**
+```sh
+npm run dsh:install      # pnpm add + dsh.profile.bundles, per profile
+npm run dsh:status       # per profile: which bundles resolve
+npm run dsh:uninstall    # remove both; issue data is untouched
+npm run dsh:skills       # per-preset skill sets under ~/.agents/skill-sets
+npm run dsh:presets:skills  # give the nine built-in presets a skill catalog
+```
+
+Discovery covers `$DSH_PROFILE_ROOT/*` (falling back to
+`~/.local/share/dsh-profiles/*`), and `--dsh-home <path>` handles a home outside
+those roots. The command is idempotent and never edits a profile's
+`cordis.patch.yml`: the rows come from each bundle's own patch. A profile created
+later needs one more `npm run dsh:install`.
+
+**From the Web UI instead**
 
 1. Select **Plugins** in the Harness left sidebar.
 2. Select **Add plugin** (or the arrow beside it → **Install a third-party plugin**).
-3. Enter the absolute path to this checkout's plugin directory:
-   `C:\Users\<you>\Documents\shared-context\dsh-plugin`
+3. Enter the absolute path to this checkout's bundle directory:
+   `/path/to/shared-context/dsh-plugin`, then repeat for `dsh-preset`.
 4. Select **Install** and wait for the dialog to finish. The registry choice does
    not matter for a local directory.
 5. Confirm `dsh-plugin-shared-context` appears under **Installed plugins**, is
@@ -96,13 +129,15 @@ You can install it from the DSH Web UI or ask the DSH agent.
 **From the DSH agent**
 
 ```text
-plugin_manager(action="install_bundle", target="C:\Users\<you>\Documents\shared-context\dsh-plugin")
+plugin_manager(action="install_bundle", target="/path/to/shared-context/dsh-plugin")
 ```
 
 This action needs Full access or an approval for that call, and it changes the
-current DSH profile for every session. A local directory install links this
-checkout: source edits are visible without reinstalling. Client changes need a
-page reload; Host changes need the row switched off and on, or a DSH restart.
+current DSH profile for every session. It is disabled in profiles that turn
+`tool-plugin-manager` off — which is why the script above exists. A local directory
+install links this checkout: source edits are visible without reinstalling. Client
+changes need a page reload; Host changes need the row switched off and on, or a DSH
+restart.
 
 ### 3. Reload and open the Issues panel
 
@@ -125,32 +160,33 @@ DSH). Only loopback origins (`127.0.0.1`, `localhost`, `::1`) are accepted.
 
 ### 5. Check the setup
 
-- Daemon: `Invoke-RestMethod http://127.0.0.1:4319/healthz`.
-- Proxy through the Harness: open `http://127.0.0.1:57891/shared-context/healthz`
+- Daemon: `curl -s http://127.0.0.1:4319/healthz`.
+- Proxy through the Harness: open `http://127.0.0.1:3080/shared-context/healthz`
   in the same browser, replacing the port with the Harness GUI's port. It should
   return the daemon's health JSON.
-- Plugin checks (run from this checkout):
+- Bundle inventory: `npm run dsh:status` lists both bundles per profile.
+- Plugin checks (run from this checkout, after `npm run build`):
   `node dsh-plugin/scripts/check-host.mjs`,
   `check-registration.mjs`, `check-render.mjs`, and `check-css.mjs`.
+  `check-host.mjs` needs a running daemon with at least one Project.
 
 **Troubleshooting**
 
 | Symptom | Fix |
 | --- | --- |
-| No **Issues** entry in the sidebar | Reload the page; confirm the bundle is switched on under **Plugins** and lists `shared-context`. |
+| No **Issues** entry in the sidebar | Reload the page; confirm the bundle is switched on under **Plugins** and lists `shared-context`; run `npm run dsh:status`. |
 | Panel says offline or shows HTTP 404 | Start the daemon, check `baseUrl`, and confirm the `shared-context` row is enabled. |
 | Project list is empty | Create a Project in the full app (`Open full app`) and reload the panel. |
-| Drag does not move a card | Reload to get the current client; use a pointer, and enable **Closed** to reach Done/Cancelled. |
+| Drag does not move a card | Reload to get the current client; use a pointer, and enable **Closed** to reach Done/Cancelled. Touch devices have no drag-and-drop; use the drawer's Stage select. |
 | Mutation fails with 403 | Reload the panel; mutations must come from the same-origin panel (marker header or `Sec-Fetch-Site: same-origin`). |
 
 ### 6. Update or remove
 
 - **Update:** edit `dsh-plugin/`; reload the page for client changes. For Host
   changes, toggle the row off/on under **Plugins** (or restart DSH). A moved
-  checkout needs to be installed again from its new path.
-- **Remove:** open **Plugins**, select the bundle, and choose **Remove**, or run
-  `plugin_manager(action="remove_bundle", target="dsh-plugin-shared-context")`.
-  Issue data stays in `%LOCALAPPDATA%\shared-context`.
+  checkout needs `npm run dsh:install` again from its new path.
+- **Remove:** `npm run dsh:uninstall`, or open **Plugins**, select the bundle, and
+  choose **Remove**. Issue data stays in the daemon's data directory.
 
 ## Backup, export, and restore
 

@@ -9,7 +9,7 @@ A local, multi-project issue tracker and context service for coding agents, expo
 - Source of truth: `plan/README.md` (plan index and milestone tracker), `CONTEXT.md` (domain glossary), and `docs/adr/` (decision records).
 - Stack: Node 24 + TypeScript, Express 5, `node:sqlite` (WAL + FTS5), React + Vite.
 - Entry point: `src/server/index.ts`. One daemon on `127.0.0.1:4319` serving `/mcp`, `/api`, `/api/events`, and the UI.
-- Data location: one global SQLite database plus managed attachments and backups under `%LOCALAPPDATA%\shared-context`.
+- Data location: one global SQLite database plus managed attachments and backups under `%LOCALAPPDATA%\shared-context` on Windows and `~/.local/share/shared-context` elsewhere; the config lives under `%APPDATA%` or `${XDG_CONFIG_HOME:-~/.config}`.
 
 ## Commands
 
@@ -18,7 +18,7 @@ A local, multi-project issue tracker and context service for coding agents, expo
 - `npm run typecheck` — typecheck server and web.
 - `npm run lint` — ESLint.
 - `npm test` — docs/plan/schema guards, all Vitest tests, and the Playwright UI smoke suite.
-- `npm run test:ui` — build the app and run Playwright (local Chrome channel).
+- `npm run test:ui` — build the app and run Playwright (bundled Chromium).
 - `npm run test:unit` — unit tests only.
 - `npm run test:concurrency` — concurrency invariants only.
 - `npm run test:docs` — glossary, ADR, plan-link, and schema guards.
@@ -28,8 +28,13 @@ A local, multi-project issue tracker and context service for coding agents, expo
 - `node dsh-plugin/scripts/check-registration.mjs` / `check-render.mjs` / `check-css.mjs` — verify slot registrations, render the panel components server-side, and parse the injected stylesheet.
 - `node dsh-preset/scripts/check-mcp.mjs` — verify the agent-preset bundle declarations and the live daemon MCP session (token, 23 tools, read-only call).
 - `npm run format` — Prettier.
-- `powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1` — register and start the `SharedContext` logon task (run `npm run build` first).
-- `powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-startup.ps1` — stop and unregister the logon task.
+- `npm run test:ui:install` — download Playwright's bundled Chromium (no branded browser is used).
+- `npm run startup:install` / `startup:uninstall` / `startup:verify` — logon startup via Task Scheduler on Windows and `systemd --user` on Linux (run `npm run build` first).
+- `npm run dsh:install` / `dsh:uninstall` / `dsh:status` — install both DSH bundles into every profile of every DSH home found on this machine.
+- `npm run dsh:skills` / `dsh:skills:status` — build and verify the per-preset skill sets under `~/.agents/skill-sets`, from `dsh-preset/skills.json` and `dsh-preset/prebuilt-skills.json`.
+- `npm run dsh:presets:skills` / `dsh:presets:skills:check` — append the scoped `skill-filesystem` + `tool-skill` rows to the nine built-in presets in each profile patch (idempotent, backs up first).
+- `powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1` — the Windows-only form of `startup:install`, with `-VerifyOnly` / `-NoStart`.
+- `bash scripts/install-startup.sh` — the Linux-only form of `startup:install`, with `--verify-only` / `--no-start`.
 - `gh run list --repo zauns/shared-context --limit 3` — check CI runs.
 
 ## Architecture
@@ -47,7 +52,7 @@ Implemented:
 - `src/server/services/change-bus.ts` — post-commit publish, SSE fan-out, and `waitForChange`.
 - `src/server/services/mutations.ts` — cursor-captured post-commit publishing for sync HTTP/MCP mutations and async attachment work.
 - `src/server/services/attachments.ts` — file copy, hashing, dedupe, text/PDF extraction, image gating, and realpath-contained file resolution.
-- `src/server/services/open-file.ts` — Windows default-handler launch with argument-safe `cmd /c start` (Explorer fallback), injectable for tests.
+- `src/server/services/open-file.ts` — default-handler launch: argument-safe `cmd /c start` (Explorer fallback) on Windows, `open` on macOS, `xdg-open` elsewhere; injectable for tests.
 - `src/server/services/backups.ts` — verified `VACUUM INTO` snapshots, attachment mirroring, retention, last-backup status, and the daily/catch-up scheduler.
 - `src/server/services/export.ts` — Markdown zip entries, JSON snapshot, and zip streaming.
 - `src/server/http/routes/admin.ts` — manual backup, backup listing, Markdown/JSON export, and token reveal/regenerate.
@@ -62,6 +67,11 @@ Implemented:
 - `dsh-plugin/` — DeepSeek Harness bundle `dsh-plugin-shared-context`: a Host half that mounts a stable same-origin `/shared-context` proxy over `/api` (CSRF handled Host-side; mutations guarded by `Sec-Fetch-Site` plus a marker header) and a Client half that adds a left-sidebar Issues entry and a board panel to the Harness Web UI. `dsh-plugin/README.md` documents install, config, and checks.
 - `dsh-preset/` — DeepSeek Harness bundle `dsh-preset-shared-context`: four agent presets. The orchestrator owns the tracker over the MCP client (bearer token read from the daemon config at activation) and delegates to tracker-free implementer, reviewer, and researcher presets through `agent_preset`. `dsh-preset/README.md` documents install, configuration, and checks.
 - `scripts/install-startup.ps1` + `scripts/uninstall-startup.ps1` — Task Scheduler logon task with a custom-data/config wrapper and `/healthz` verification.
+- `scripts/install-startup.sh` + `scripts/uninstall-startup.sh` + `scripts/shared-context.service.in` — the `systemd --user` equivalent, bound to `graphical-session.target`, with `EnvironmentFile` overrides and the same `/healthz` wait.
+- `scripts/startup.mjs` — OS-neutral dispatcher behind `npm run startup:*`.
+- `scripts/dsh-bundles.mjs` — installs, removes, and reports both DSH bundles across every profile of every discovered DSH home (pnpm add + `dsh.profile.bundles`, idempotent).
+- `scripts/dsh-skills.mjs` + `dsh-preset/skills.json` + `dsh-preset/prebuilt-skills.json` — materializes `<agentsHome>/skill-sets/<preset>/` as symlinks so each preset's `skill-filesystem` provider exposes only its curated catalog (the registry has no filter primitive; scoping is by root).
+- `scripts/dsh-presets-skills.mjs` — appends the scoped `skill-filesystem` + `tool-skill` rows to the nine built-in presets in each profile patch, with a timestamped backup and an idempotency check.
 - `docs/restore.md` — stop, snapshot copy, WAL cleanup, attachment mirror, and verification steps.
 - `test/helpers/db.ts` — in-memory migrated database and seed.
 - `test/helpers/http.ts` — Supertest app with CSRF setup and an injectable OS opener.
@@ -93,3 +103,7 @@ Planned next:
 ## Notes
 
 M0–M7 verified on 2026-10-23: 5 docs/plan/schema guards, 65 Vitest tests, and the Playwright UI smoke suite pass; `npm run typecheck`, `npm run lint`, and `npm run build` pass (Vite still warns that the main chunk exceeds 500 kB). The smoke covers setup, Issue creation, attachment upload, Project settings, module add, deletion + batch restore, Backup now, Markdown export download, token reveal/regenerate, and navigation. Task Scheduler registration was verified with a temporary task and removed; startup scripts expose `-VerifyOnly` and `-NoStart`.
+
+Cross-platform pass on Linux (Pop!_OS, Node 24.18.0, 2026-11-08), with no branded browser installed: `npm run typecheck`, `npm run lint`, `npm run build`, and `npm test` all pass — 5 guards, 77 Vitest tests (1 Windows-only test skipped), and the UI smoke on Playwright's bundled Chromium. `node dsh-plugin/scripts/check-host.mjs` and `node dsh-preset/scripts/check-mcp.mjs` pass against a real daemon; `check-registration.mjs` now asserts `main.key === sidebar.panellist.id` and dictionary parity instead of only printing. The systemd unit rendered by `scripts/install-startup.sh` passes `systemd-analyze verify`; it was installed and removed against a stub `systemctl`, because the sandbox cannot reach `systemctl --user` — the live start still needs a desktop terminal. Both DSH bundles were installed into the `pessoal` and `empresa` homes with `npm run dsh:install`, and `dsh --profile web --dump-config` shows the `shared-context` Host row plus all four presets with no skipped bundles; `agent-preset-registry` still defaults to `equipe`. The Windows leg was not re-run in this pass.
+
+Skill scoping (2026-11-08): the registry has no filter primitive, so each preset now mounts `dsh-skill-filesystem` with `includeDefaultRoots: false` plus one `customSkillDirs` root under `<agentsHome>/skill-sets/<preset>`, and `tool-skill` to expose the catalog and loader. Thirteen sets exist (four bundle presets, nine built-in), built from `dsh-preset/skills.json` and `dsh-preset/prebuilt-skills.json`, validated against the 104 installed skills. The nine built-in presets in both profiles were patched in place, with timestamped `.bak-pre-skills-*` backups, and both patches still compose (`--dump-config` exit 0, no skipped rows); a second run reports "already mount skills". Session history showed 22 of 139 `subagent` calls carrying a skill instruction, concentrated in planner (`planning-and-task-breakdown`), tester and coder (`tdd`), coder (`frontend-design`), and reviewer (`code-review`, declared but never passed).

@@ -30,7 +30,14 @@ brief the orchestrator writes plus the repository on disk.
 From a Harness conversation, install the bundle by absolute directory:
 
 ```text
-plugin_manager(action="install_bundle", target="C:\Users\<you>\Documents\shared-context\dsh-preset")
+plugin_manager(action="install_bundle", target="/path/to/shared-context/dsh-preset")
+```
+
+Or install both bundles into every profile of every DSH home at once:
+
+```sh
+npm run dsh:install
+npm run dsh:status
 ```
 
 The install applies live. Presets appear in the roster immediately; a new
@@ -94,10 +101,54 @@ Harness Host
   mutations instead of relying on the MCP session binding.
 - **Token at activation.** The `Authorization` header is a `!!js` expression
   that reads the daemon config when the preset loads. Regenerating the token
-  therefore needs a plugin reload (or a Harness restart), not an edit here.
+  therefore needs a plugin reload (or a Harness restart), not an edit here. The
+  expression never throws: a missing or unreadable config yields
+  `Bearer unavailable`, so the row activates and the failure shows up as a 401
+  from the MCP client instead of a broken preset.
+- **Port follows the config.** `SHARED_CONTEXT_URL` wins when set; otherwise the
+  `url` expression reads `port` from the same config file, so a daemon moved off
+  4319 needs no bundle edit.
 - **Portable overrides.** `SHARED_CONTEXT_URL`, `SHARED_CONTEXT_TOKEN`, and
-  `SHARED_CONTEXT_CONFIG` are honored by the expression when set in the Harness
+  `SHARED_CONTEXT_CONFIG` are honored by the expressions when set in the Harness
   process environment.
+
+## Skills
+
+Each preset can load skills through DSH's `skill` tool. The registry has no filter
+primitive, so scoping is done by roots: every preset mounts
+`dsh-skill-filesystem` with `includeDefaultRoots: false` and one
+`customSkillDirs` entry pointing at `<agentsHome>/skill-sets/<preset id>`.
+
+Two maps declare the catalog per preset:
+
+| File | Covers |
+| --- | --- |
+| `dsh-preset/skills.json` | the four `shared-context-*` presets declared here |
+| `dsh-preset/prebuilt-skills.json` | the nine built-in presets in the DSH profile (`architect`, `coder`, `database`, `devops`, `planner`, `researcher`, `reviewer`, `security`, `tester`) |
+
+Build or verify the sets:
+
+```sh
+npm run dsh:skills           # link the named skills into ~/.agents/skill-sets/
+npm run dsh:skills:status    # report missing or stale links
+```
+
+The nine built-in presets live in the profile patch, not in this bundle. Give them
+the same treatment with:
+
+```sh
+npm run dsh:presets:skills:check   # which presets still lack a catalog
+npm run dsh:presets:skills         # append the two rows, backup first
+```
+
+Both commands are idempotent and skip a preset that already mounts
+`skill-filesystem` (the `equipe` orchestrator does). Re-run
+`dsh:presets:skills` after `tools/apply-dsh-presets.py` writes a fresh preset
+block into a profile.
+
+`tool-skill` is what gives an agent the catalog *and* the loader: a preset without
+it has no `skill` tool at all, which is why hand-written prompts have to fall back
+to reading `SKILL.md` from disk.
 
 ## Verification
 
@@ -144,6 +195,8 @@ to these rows.
 | ----------------------- | ------------------------------------------------------------------------------------------------- |
 | `package.json`          | Bundle manifest: `dsh.bundle.patch` plus the `check` script.                                      |
 | `cordis.patch.yml`      | Four `@deepseek-ai/dsh-agent-preset` declarations, their personas, tools, and the MCP client row. |
+| `skills.json`           | Skill catalog for the four `shared-context-*` presets.                                            |
+| `prebuilt-skills.json`  | Skill catalog for the nine built-in DSH presets.                                                  |
 | `scripts/check-mcp.mjs` | Bundle and daemon verification, with no dependencies.                                             |
 | `README.md`             | This document.                                                                                    |
 

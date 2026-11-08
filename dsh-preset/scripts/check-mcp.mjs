@@ -6,17 +6,30 @@
 // 2. The daemon is reachable and the token from its config file opens an MCP
 //    session that lists the expected tools.
 //
-// No dependencies: global fetch and node:fs only.
+// No dependencies beyond the built daemon: the config path and token resolution
+// is imported from `dist/server/config.js` so this check can never drift from
+// the daemon it is verifying. Run `npm run build` first.
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const patchPath = path.resolve(here, '..', 'cordis.patch.yml');
 const defaultBaseUrl = 'http://127.0.0.1:4319';
+
+let resolveConfigPath;
+let readConfigFile;
+try {
+  ({ resolveConfigPath, readConfigFile } = await import(
+    pathToFileURL(path.resolve(here, '..', '..', 'dist', 'server', 'config.js')).href
+  ));
+} catch (error) {
+  console.error(`FAIL cannot load dist/server/config.js — run "npm run build" first`);
+  console.error(`     ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
+}
 
 const PRESET_IDS = [
   'shared-context-orchestrator',
@@ -63,23 +76,13 @@ function fail(message, detail) {
   if (detail) console.error(`     ${detail}`);
 }
 
-function configPath() {
-  if (process.env.SHARED_CONTEXT_CONFIG) return process.env.SHARED_CONTEXT_CONFIG;
-  if (process.platform === 'win32') {
-    const appData = process.env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming');
-    return path.join(appData, 'shared-context', 'config.json');
-  }
-  const configHome = process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), '.config');
-  return path.join(configHome, 'shared-context', 'config.json');
-}
-
 function resolveDaemon() {
   const explicitUrl = process.env.SHARED_CONTEXT_URL;
   const explicitToken = process.env.SHARED_CONTEXT_TOKEN;
   let fileConfig = {};
-  const file = configPath();
+  const file = resolveConfigPath();
   try {
-    fileConfig = JSON.parse(fs.readFileSync(file, 'utf8'));
+    fileConfig = readConfigFile(file);
   } catch {
     // Reported below when neither an explicit token nor the file provides one.
   }

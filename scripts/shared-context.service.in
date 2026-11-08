@@ -1,0 +1,23 @@
+[Unit]
+Description=Shared Context local daemon (interactive session)
+Documentation=file://@REPO_ROOT@/README.md
+After=graphical-session.target
+PartOf=graphical-session.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=exec
+WorkingDirectory=@REPO_ROOT@
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=@ENV_FILE@
+ExecStart="@NODE@" "@ENTRY@"
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+KillMode=mixed
+UMask=0077
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=graphical-session.target

@@ -111,9 +111,19 @@ function call(route, url, { method = 'GET', body, headers = {} } = {}) {
   });
 }
 
-function assert(condition, label) {
+/**
+ * Record one check.
+ *
+ * @param {boolean} condition - the expectation.
+ * @param {string} label - what is being checked, phrased as a statement.
+ * @param {string} [hint] - remediation printed only when the check fails.
+ */
+function assert(condition, label, hint) {
   console.log(`${condition ? 'ok' : 'FAIL'} - ${label}`);
-  if (!condition) process.exitCode = 1;
+  if (!condition) {
+    if (hint) console.error(`       ${hint}`);
+    process.exitCode = 1;
+  }
 }
 
 /* ── proxy behavior against the mock ───────────────────────────────────── */
@@ -196,36 +206,60 @@ assert(mockMount.route.path === '/shared-context', 'mounts the stable route');
 assert(injectionTable[0].name === '__DSH_SHARED_CONTEXT__', 'boot global has the expected name');
 
 /* ── read-only pass against the real daemon ────────────────────────────── */
+// This pass needs a running daemon with at least one Project. Both failures are
+// environment setup, not proxy defects, so say what to do instead of dumping a
+// bare assertion.
 
 const liveMount = mount('http://127.0.0.1:4319');
 const liveHealth = await call(liveMount.route, `${liveMount.route.path}/healthz`, {
   headers: { 'sec-fetch-site': 'same-origin' },
 });
-assert(liveHealth.status === 200, 'live daemon /healthz through the proxy');
+assert(
+  liveHealth.status === 200,
+  'live daemon /healthz through the proxy',
+  `Got HTTP ${liveHealth.status}. Start the daemon with "npm start" or the startup script, then retry.`,
+);
 const liveProjects = await call(liveMount.route, `${liveMount.route.path}/api/projects`, {
   headers: { 'sec-fetch-site': 'same-origin' },
 });
 const liveItems = liveProjects.status === 200 ? JSON.parse(liveProjects.body).items : [];
-assert(liveProjects.status === 200 && Array.isArray(liveItems) && liveItems.length > 0, 'live daemon /api/projects through the proxy');
+assert(
+  liveProjects.status === 200,
+  'live daemon /api/projects through the proxy',
+  `Got HTTP ${liveProjects.status}. Check the daemon log for a startup error.`,
+);
+assert(
+  Array.isArray(liveItems) && liveItems.length > 0,
+  'live daemon has at least one Project',
+  'Open http://127.0.0.1:4319, run the setup flow, then retry.',
+);
 const firstKey = liveItems[0]?.key;
 const liveBoard = await call(liveMount.route, `${liveMount.route.path}/api/projects/${encodeURIComponent(firstKey)}/board?include_closed=false`, {
   headers: { 'sec-fetch-site': 'same-origin' },
 });
 const liveBoardPayload = liveBoard.status === 200 ? JSON.parse(liveBoard.body) : null;
 assert(
-  liveBoard.status === 200 && Array.isArray(liveBoardPayload.columns) && liveBoardPayload.columns.length === 4,
+  liveBoard.status === 200 &&
+    Array.isArray(liveBoardPayload?.columns) &&
+    liveBoardPayload.columns.length === 4,
   'live daemon board returns the four open stages',
+  `Got HTTP ${liveBoard.status}. Start the daemon with a Project before running the live pass.`,
 );
 
-const liveIssueKey = liveBoardPayload.columns.flatMap((column) => column.issues)[0]?.key;
+// Tolerate a missing board payload: the assertions above already reported it,
+// and a TypeError here would hide the real message.
+const liveIssueKey = (liveBoardPayload?.columns ?? []).flatMap((column) => column.issues)[0]?.key;
 if (liveIssueKey !== undefined) {
   const liveIssue = await call(liveMount.route, `${liveMount.route.path}/api/issues/${encodeURIComponent(liveIssueKey)}`, {
     headers: { 'sec-fetch-site': 'same-origin' },
   });
   const liveIssuePayload = liveIssue.status === 200 ? JSON.parse(liveIssue.body) : null;
   assert(
-    liveIssue.status === 200 && liveIssuePayload.issue.key === liveIssueKey && Array.isArray(liveIssuePayload.issue.activity),
+    liveIssue.status === 200 &&
+      liveIssuePayload?.issue?.key === liveIssueKey &&
+      Array.isArray(liveIssuePayload.issue.activity),
     'live daemon Issue detail through the proxy',
+    `Got HTTP ${liveIssue.status} for ${liveIssueKey}.`,
   );
 }
 

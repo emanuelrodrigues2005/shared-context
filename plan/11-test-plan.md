@@ -115,7 +115,7 @@ Use the SDK client against a real HTTP server with a test token.
 
 ## UI tests (Playwright)
 
-**M7 status:** wired in `test/ui/smoke.spec.ts`; `npm run test:ui` builds the app and runs it, and `npm test` includes it. CI installs Chromium with `npx playwright install --with-deps chromium`; local runs use the installed Chrome channel.
+**M7 status:** wired in `test/ui/smoke.spec.ts`; `npm run test:ui` builds the app and runs it, and `npm test` includes it. CI installs Chromium with `npx playwright install --with-deps chromium`; local runs use the same bundled Chromium via `npm run test:ui:install`, so no branded browser is needed on any platform.
 
 - Load the board; six columns; Done/Cancelled collapse.
 - Create an Issue from a column; Stage pre-filled.

@@ -6,17 +6,19 @@
 
 ## Paths
 
-| Purpose | Path |
-|---|---|
-| Config | `%APPDATA%\shared-context\config.json` |
-| Data root | `%LOCALAPPDATA%\shared-context` |
-| Database | `%LOCALAPPDATA%\shared-context\data\shared-context.db` |
-| Attachments | `%LOCALAPPDATA%\shared-context\data\attachments\` |
-| Temp | `%LOCALAPPDATA%\shared-context\data\tmp\` |
-| Backups | `%LOCALAPPDATA%\shared-context\backups\` |
-| Logs | `%LOCALAPPDATA%\shared-context\logs\` |
+Resolution is per platform; the XDG variables apply on Linux and macOS only.
 
-Override the data root with `SHARED_CONTEXT_DATA_DIR` for tests or a portable install. The repository never contains live data.
+| Purpose | Windows | Linux and macOS |
+|---|---|---|
+| Config | `%APPDATA%\shared-context\config.json` | `${XDG_CONFIG_HOME:-~/.config}/shared-context/config.json` |
+| Data root | `%LOCALAPPDATA%\shared-context` | `~/.local/share/shared-context` |
+| Database | `<data>\data\shared-context.db` | `<data>/data/shared-context.db` |
+| Attachments | `<data>\data\attachments\` | `<data>/data/attachments/` |
+| Temp | `<data>\data\tmp\` | `<data>/data/tmp/` |
+| Backups | `<data>\backups\` | `<data>/backups/` |
+| Logs | `<data>\logs\` | `<data>/logs/` |
+
+Override the data root with `SHARED_CONTEXT_DATA_DIR` and the config file with `SHARED_CONTEXT_CONFIG` for tests or a portable install. Blank values count as unset. A path written for the other platform is rejected at startup with an explicit error rather than creating a literal `C:\Users\...` directory. The repository never contains live data.
 
 ## Config file
 
@@ -24,8 +26,8 @@ Override the data root with `SHARED_CONTEXT_DATA_DIR` for tests or a portable in
 {
   "port": 4319,
   "token": "base64url...",
-  "data_dir": "C:\\Users\\<user>\\AppData\\Local\\shared-context",
-  "backup_dir": "C:\\Users\\<user>\\AppData\\Local\\shared-context\\backups",
+  "data_dir": "/home/<user>/.local/share/shared-context",
+  "backup_dir": "/home/<user>/.local/share/shared-context/backups",
   "backup_hour": 3,
   "backup_retention_days": 14,
   "log_level": "info",
@@ -52,18 +54,31 @@ Rules:
 
 ## Starting at logon
 
-`scripts/install-startup.ps1`:
+`npm run startup:install` dispatches to the platform script; both share one flag surface (`--verify-only`, `--no-start`, `--data-dir`, `--config`, `--port`, `--health-timeout`).
+
+Windows — `scripts/install-startup.ps1`:
 
 - Resolves the current `node.exe` path.
 - Registers a Task Scheduler task named `SharedContext` at logon for the current user.
 - Action: `node.exe "<repo>\dist\server\index.js"` with working directory `<repo>`.
-- Sets `SHARED_CONTEXT_DATA_DIR` and `SHARED_CONTEXT_CONFIG` if non-default.
+- Sets `SHARED_CONTEXT_DATA_DIR` and `SHARED_CONTEXT_CONFIG` in a `.cmd` wrapper if non-default.
 - Starts the task immediately and verifies `/healthz`.
 - `scripts/uninstall-startup.ps1` unregisters the task.
 
-Why not a Windows service: a service runs in session 0 and cannot open attachments with the user's default applications. See [ADR-0006](../docs/adr/0006-run-at-logon.md).
+Linux — `scripts/install-startup.sh`:
 
-The task does not run before logon. If the machine reboots and nobody logs in, the tracker is offline. This is accepted for personal use.
+- Resolves an absolute `node` (nvm's node is not on a user unit's PATH).
+- Writes `~/.config/systemd/user/shared-context.service` from `scripts/shared-context.service.in`.
+- `WantedBy=graphical-session.target`, `Type=exec`, `Restart=on-failure`.
+- Sets `SHARED_CONTEXT_DATA_DIR` and `SHARED_CONTEXT_CONFIG` through `EnvironmentFile`, never the token.
+- Enables, starts, and verifies `/healthz`; `scripts/uninstall-startup.sh` disables and removes it.
+
+Neither runs before logon: a Windows service would run in session 0, and a `systemd --user`
+unit bound to `default.target` would start before the compositor. Both cannot open
+attachments with the user's default applications. See
+[ADR-0006](../docs/adr/0006-run-at-logon.md).
+
+If the machine reboots and nobody logs in, the tracker is offline. This is accepted for personal use.
 
 ## Process lifecycle
 

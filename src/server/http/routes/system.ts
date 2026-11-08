@@ -52,6 +52,8 @@ export function createSystemRouter({ db, config, csrfToken }: SystemRouterDeps):
     response.json({
       ok: true,
       version: '0.1.0',
+      /** `process.platform`, so the UI can show the right startup commands. */
+      platform: process.platform,
       port: config.port,
       data_dir: config.dataDir,
       attachments_dir: config.attachmentsDir,

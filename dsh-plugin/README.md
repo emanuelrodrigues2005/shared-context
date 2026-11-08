@@ -31,7 +31,15 @@ From the Harness conversation, install the bundle with `plugin_manager` and the
 absolute package directory as the target:
 
 ```text
-plugin_manager(action="install_bundle", target="C:\Users\<you>\Documents\shared-context\dsh-plugin")
+plugin_manager(action="install_bundle", target="/path/to/shared-context/dsh-plugin")
+```
+
+Or install every bundle into every profile of every DSH home at once, without the
+agent tool:
+
+```sh
+npm run dsh:install
+npm run dsh:status
 ```
 
 The bundle inserts one Host row (`shared-context`) and contributes one Client

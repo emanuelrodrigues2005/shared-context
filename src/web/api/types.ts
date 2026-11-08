@@ -177,6 +177,8 @@ export interface BoardResult {
 export interface ApiConfig {
   ok: true;
   version: string;
+  /** `process.platform` of the daemon: `win32`, `linux`, `darwin`, … */
+  platform: string;
   port: number;
   data_dir: string;
   attachments_dir: string;

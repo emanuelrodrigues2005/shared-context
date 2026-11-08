@@ -198,7 +198,7 @@ function IdentitySection({ project }: { project: ProjectSummary }) {
           <input
             className="input font-mono"
             value={rootPath}
-            placeholder="C:\\path\\to\\repository"
+            placeholder="/path/to/repository"
             onChange={(event) => setRootPath(event.target.value)}
           />
           <span className="mt-1 block text-[10px] muted">
