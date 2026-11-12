@@ -127,10 +127,16 @@ shared-context/
     mcp/
     ui/
   scripts/
+    dsh-bundles.mjs
+    dsh-presets-skills.mjs
+    dsh-profiles.mjs           # per-DSH-home config/data/token + status/start/stop
+    dsh-skills.mjs
     install-startup.ps1
+    install-startup.sh
+    shared-context.service.in
+    startup.mjs
     uninstall-startup.ps1
-    backup.ps1
-    export.ps1
+    uninstall-startup.sh
   dist/
     server/
     web/
@@ -140,51 +146,54 @@ shared-context/
 
 ## Toolchain
 
-| Concern | Choice |
-|---|---|
-| Runtime | Node 24 (installed) |
-| Language | TypeScript, strict, ESM |
-| Server | Express 5 |
-| MCP | `@modelcontextprotocol/sdk` |
-| Validation | Zod |
-| Database | `node:sqlite` (`DatabaseSync`) |
-| Logging | `pino` + daily file transport |
-| Uploads | `multer` or `busboy` |
-| MIME sniffing | `file-type` |
-| IDs | `uuid` v7 |
-| PDF text | `unpdf` (PDF.js wrapper); fallback to metadata |
-| Zip export | `archiver` |
-| UI | React, Vite, Tailwind, Radix primitives |
-| Drag and drop | `@dnd-kit/core`, `@dnd-kit/sortable` |
-| Server state | `@tanstack/react-query` |
-| Markdown | `react-markdown`, `remark-gfm`, `rehype-sanitize` |
-| Tests | Vitest, Supertest, Playwright |
+| Concern       | Choice                                            |
+| ------------- | ------------------------------------------------- |
+| Runtime       | Node 24 (installed)                               |
+| Language      | TypeScript, strict, ESM                           |
+| Server        | Express 5                                         |
+| MCP           | `@modelcontextprotocol/sdk`                       |
+| Validation    | Zod                                               |
+| Database      | `node:sqlite` (`DatabaseSync`)                    |
+| Logging       | `pino` + daily file transport                     |
+| Uploads       | `multer` or `busboy`                              |
+| MIME sniffing | `file-type`                                       |
+| IDs           | `uuid` v7                                         |
+| PDF text      | `unpdf` (PDF.js wrapper); fallback to metadata    |
+| Zip export    | `archiver`                                        |
+| UI            | React, Vite, Tailwind, Radix primitives           |
+| Drag and drop | `@dnd-kit/core`, `@dnd-kit/sortable`              |
+| Server state  | `@tanstack/react-query`                           |
+| Markdown      | `react-markdown`, `remark-gfm`, `rehype-sanitize` |
+| Tests         | Vitest, Supertest, Playwright                     |
 
 Use current stable versions at M0 and pin them in `package-lock.json`. Avoid native modules; `node:sqlite` is the reason the Windows install is simple.
 
-## Planned npm scripts
+## npm scripts
 
-These are targets for M0, not present yet.
+The core scripts are listed below; DSH and startup variants are additive. `npm test` runs the docs/plan guards before the application tests.
 
-| Script | Command | Purpose |
-|---|---|---|
-| `dev` | `concurrently "tsx watch src/server/index.ts" "vite"` | Server watch + Vite dev server |
-| `build` | `tsc -p tsconfig.server.json && vite build` | Server to `dist/server`, UI to `dist/web` |
-| `start` | `node dist/server/index.js` | Production daemon |
-| `test` | `npm run test:docs && vitest run` | All tests |
-| `test:docs` | `node --test test/docs.test.mjs test/plan.test.mjs test/schema.test.mjs` | Docs/plan/schema guards |
-| `test:unit` | `vitest run test/unit` | Domain and repository tests |
-| `test:integration` | `vitest run test/integration` | HTTP + SQLite tests |
-| `test:concurrency` | `vitest run test/concurrency` | Parallel write tests |
-| `test:mcp` | `vitest run test/mcp` | MCP client tests |
-| `test:ui` | `npm run build && playwright test` | Browser smoke tests |
-| `typecheck` | `tsc --noEmit` | Type check both projects |
-| `lint` | `eslint .` | Lint |
-| `format` | `prettier --write .` | Format |
-| `export` | `node dist/server/scripts/export.js` | CLI export |
-| `backup` | `node dist/server/scripts/backup.js` | On-demand backup |
-
-`npm test` must run the docs/plan guards even before application tests exist. This keeps the repository honest during M0.
+| Script                                                     | Command                                                                  | Purpose                                            |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------- |
+| `dev`                                                      | `concurrently "tsx watch src/server/index.ts" "vite"`                    | Server watch + Vite dev server                     |
+| `build`                                                    | `tsc -p tsconfig.server.json && vite build`                              | Server to `dist/server`, UI to `dist/web`          |
+| `start`                                                    | `node dist/server/index.js`                                              | Production daemon                                  |
+| `test`                                                     | `npm run test:docs && vitest run && npm run test:ui`                     | All tests                                          |
+| `test:docs`                                                | `node --test test/docs.test.mjs test/plan.test.mjs test/schema.test.mjs` | Docs/plan/schema guards                            |
+| `test:unit`                                                | `vitest run test/unit`                                                   | Domain and repository tests                        |
+| `test:integration`                                         | `vitest run test/integration`                                            | HTTP + SQLite tests                                |
+| `test:concurrency`                                         | `vitest run test/concurrency`                                            | Parallel write tests                               |
+| `test:mcp`                                                 | `vitest run test/mcp`                                                    | MCP client tests                                   |
+| `test:ui`                                                  | `npm run build && playwright test`                                       | Browser smoke tests                                |
+| `typecheck`                                                | `tsc --noEmit`                                                           | Type check both projects                           |
+| `lint`                                                     | `eslint .`                                                               | Lint                                               |
+| `format`                                                   | `prettier --write .`                                                     | Format                                             |
+| `startup:install` / `startup:uninstall` / `startup:verify` | `node scripts/startup.mjs <action>`                                      | Logon startup dispatch                             |
+| `dsh:install` / `dsh:uninstall` / `dsh:status`             | `node scripts/dsh-bundles.mjs <action>`                                  | Install/report both DSH bundles per home           |
+| `dsh:skills` / `dsh:skills:status`                         | `node scripts/dsh-skills.mjs [--status]`                                 | Build/verify per-preset skill sets                 |
+| `dsh:presets:skills` / `dsh:presets:skills:check`          | `node scripts/dsh-presets-skills.mjs [--check]`                          | Add skill rows to the built-in presets             |
+| `dsh:profiles`                                             | `node scripts/dsh-profiles.mjs status`                                   | Status of every discovered DSH home                |
+| `dsh:profiles:install`                                     | `node scripts/dsh-profiles.mjs install --home <name>`                    | Create config/data/token and start a home instance |
+| `dsh:profiles:start` / `dsh:profiles:stop`                 | `node scripts/dsh-profiles.mjs <action> --home <name>`                   | Start/stop a home daemon                           |
 
 ## Configuration files
 
@@ -198,20 +207,24 @@ These are targets for M0, not present yet.
 
 ## Environment variables
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `SHARED_CONTEXT_PORT` | `4319` | HTTP port |
-| `SHARED_CONTEXT_DATA_DIR` | `%LOCALAPPDATA%\shared-context` | Data, attachments, backups, logs |
-| `SHARED_CONTEXT_CONFIG` | `%APPDATA%\shared-context\config.json` | Config file path |
-| `SHARED_CONTEXT_TOKEN` | generated | MCP bearer token override |
-| `LOG_LEVEL` | `info` | `trace`/`debug`/`info`/`warn`/`error` |
+| Variable                  | Default                                | Purpose                                                                                                                |
+| ------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `SHARED_CONTEXT_PORT`     | `4319`                                 | HTTP port                                                                                                              |
+| `SHARED_CONTEXT_DATA_DIR` | `%LOCALAPPDATA%\shared-context`        | Data, attachments, backups, logs                                                                                       |
+| `SHARED_CONTEXT_CONFIG`   | `%APPDATA%\shared-context\config.json` | Config file path                                                                                                       |
+| `SHARED_CONTEXT_TOKEN`    | generated                              | MCP bearer token override                                                                                              |
+| `DSH_HOME`                | set by DSH                             | DSH home; selects the profile config/data root for the plugin, preset, and profile CLI (not read by the daemon itself) |
+| `LOG_LEVEL`               | `info`                                 | `trace`/`debug`/`info`/`warn`/`error`                                                                                  |
 
 Tests set `SHARED_CONTEXT_DATA_DIR` to a temporary directory. Never read the real user data in tests.
+
+A profile is selected by the environment plus the filesystem: when `<DSH_HOME>/shared-context/` exists, the plugin Host, the presets, and `scripts/dsh-profiles.mjs` use `<DSH_HOME>/shared-context/config.json` and the `<DSH_HOME>/shared-context` data root. A home without that directory resolves to the platform global config and data root. The profile's config file owns its `port` and `data_dir`; do not set `SHARED_CONTEXT_PORT` for a profile daemon. `SHARED_CONTEXT_CONFIG` remains the explicit override, and `SHARED_CONTEXT_URL` / `SHARED_CONTEXT_TOKEN` remain the plugin/preset environment overrides.
 
 ## Build and run model
 
 - Development: `npm run dev` starts the API/MCP on 4319 and Vite on its own port with a proxy.
 - Production: `npm run build`, then `npm start` or the Task Scheduler task.
+- A profile instance runs the same built entry point with `SHARED_CONTEXT_CONFIG` pointing at its own config; it binds the port and data root from that file. One daemon per home, one shared global instance for every home without a profile directory.
 - The server serves `dist/web` as static files and falls back to `index.html` for SPA routes, excluding `/api`, `/mcp`, and `/healthz`.
 - The UI and API share an origin in production; no CORS.
 

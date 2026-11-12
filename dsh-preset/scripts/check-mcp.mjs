@@ -11,6 +11,7 @@
 // the daemon it is verifying. Run `npm run build` first.
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -79,18 +80,59 @@ function fail(message, detail) {
 function resolveDaemon() {
   const explicitUrl = process.env.SHARED_CONTEXT_URL;
   const explicitToken = process.env.SHARED_CONTEXT_TOKEN;
+  const explicitConfig = process.env.SHARED_CONTEXT_CONFIG;
+  const home = process.env.DSH_HOME?.trim() || null;
+  let file;
+  let source;
+  if (explicitConfig !== undefined && explicitConfig.trim() !== '') {
+    file = explicitConfig.trim();
+    source = 'config';
+  } else if (home !== null && fs.existsSync(path.join(home, 'shared-context'))) {
+    file = path.join(home, 'shared-context', 'config.json');
+    source = 'profile';
+    if (!fs.existsSync(file)) {
+      fail(
+        `profile config is missing at ${file}`,
+        `Create it with "npm run dsh:profiles:install -- --home ${path.basename(home)}", or unset DSH_HOME to use the legacy daemon.`,
+      );
+      return {
+        baseUrl: explicitUrl ?? defaultBaseUrl,
+        token: explicitToken,
+        file,
+        source,
+        home,
+      };
+    }
+  } else {
+    file = resolveConfigPath();
+    source = 'global';
+  }
+
   let fileConfig = {};
-  const file = resolveConfigPath();
   try {
     fileConfig = readConfigFile(file);
-  } catch {
-    // Reported below when neither an explicit token nor the file provides one.
+  } catch (error) {
+    fail(
+      `cannot read ${source} config ${file}`,
+      error instanceof Error ? error.message : String(error),
+    );
+    return {
+      baseUrl: explicitUrl ?? defaultBaseUrl,
+      token: explicitToken,
+      file,
+      source,
+      home,
+    };
   }
+
   const port = fileConfig.port ?? 4319;
+  const baseUrl = explicitUrl ? explicitUrl.replace(/\/+$/, '') : `http://127.0.0.1:${port}`;
   return {
-    baseUrl: explicitUrl ?? `http://127.0.0.1:${port}`,
+    baseUrl,
     token: explicitToken ?? fileConfig.token,
     file,
+    source,
+    home,
   };
 }
 
@@ -114,6 +156,81 @@ function checkBundle() {
   }
   if (patch.includes('transport: streamable-http')) pass('MCP transport: streamable-http');
   else fail('cordis.patch.yml does not declare the streamable-http transport');
+}
+
+function checkProfileExpressions() {
+  let patch;
+  try {
+    patch = fs.readFileSync(patchPath, 'utf8');
+  } catch (error) {
+    fail(`cannot read ${patchPath}`, error.message);
+    return;
+  }
+  const urlMatch = /^\s*url:\s*!!js\s+"([^"]+)"/m.exec(patch);
+  const tokenMatch = /^\s*Authorization:\s*!!js\s+"([^"]+)"/m.exec(patch);
+  if (urlMatch === null || tokenMatch === null) {
+    fail(
+      'profile expressions not found in cordis.patch.yml',
+      'expected one-line url: !!js "..." and Authorization: !!js "..." scalars',
+    );
+    return;
+  }
+
+  const evaluate = (expression) => new Function(`return (${expression})`)();
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'shared-context-preset-'));
+  const home = path.join(base, 'pessoal');
+  const profileRoot = path.join(home, 'shared-context');
+  const saved = {
+    DSH_HOME: process.env.DSH_HOME,
+    SHARED_CONTEXT_CONFIG: process.env.SHARED_CONTEXT_CONFIG,
+    SHARED_CONTEXT_URL: process.env.SHARED_CONTEXT_URL,
+    SHARED_CONTEXT_TOKEN: process.env.SHARED_CONTEXT_TOKEN,
+  };
+  try {
+    fs.mkdirSync(profileRoot, { recursive: true });
+    fs.writeFileSync(
+      path.join(profileRoot, 'config.json'),
+      `${JSON.stringify({ port: 4320, token: 'test-profile-token', data_dir: profileRoot })}\n`,
+    );
+    process.env.DSH_HOME = home;
+    delete process.env.SHARED_CONTEXT_CONFIG;
+    delete process.env.SHARED_CONTEXT_URL;
+    delete process.env.SHARED_CONTEXT_TOKEN;
+
+    const url = evaluate(urlMatch[1]);
+    const token = evaluate(tokenMatch[1]);
+    if (url === 'http://127.0.0.1:4320/mcp' && token === 'Bearer test-profile-token') {
+      pass('preset expressions resolve the profile config (URL + token)');
+    } else {
+      fail(
+        'preset expressions did not resolve the profile config',
+        `url=${String(url)} token=${String(token)}`,
+      );
+    }
+
+    fs.rmSync(path.join(profileRoot, 'config.json'));
+    const closedUrl = evaluate(urlMatch[1]);
+    const closedToken = evaluate(tokenMatch[1]);
+    if (closedUrl === 'http://127.0.0.1:1/mcp' && closedToken === 'Bearer unavailable') {
+      pass('preset expressions fail closed when a profile directory has no config');
+    } else {
+      fail(
+        'preset expressions did not fail closed without a profile config',
+        `url=${String(closedUrl)} token=${String(closedToken)}`,
+      );
+    }
+  } catch (error) {
+    fail(
+      'preset expression check crashed',
+      error instanceof Error ? (error.stack ?? error.message) : String(error),
+    );
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(base, { recursive: true, force: true });
+  }
 }
 
 async function rpc(url, token, body, sessionId) {
@@ -231,8 +348,15 @@ async function main() {
   console.log('Shared Context preset checks\n');
   console.log('-- bundle');
   checkBundle();
+  console.log('\n-- profile expressions');
+  checkProfileExpressions();
   console.log('\n-- daemon');
-  await checkDaemon(resolveDaemon());
+  const daemon = resolveDaemon();
+  console.log(
+    `     ${daemon.source} config: ${daemon.file}${daemon.home ? ` (home ${daemon.home})` : ''}`,
+  );
+  console.log(`     resolved: ${daemon.baseUrl}`);
+  await checkDaemon(daemon);
   console.log('');
   if (failures) {
     console.error(`${failures} check(s) failed`);

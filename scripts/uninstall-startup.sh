@@ -33,7 +33,13 @@ command -v systemctl >/dev/null 2>&1 || fail 'systemctl was not found. This scri
 
 CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 UNIT_FILE="$CONFIG_HOME/systemd/user/$NAME.service"
-ENV_FILE="$CONFIG_HOME/shared-context/startup.env"
+# Mirrors install-startup.sh: the default unit keeps the historical env file,
+# and every other unit has its own.
+if [ "$NAME" = 'shared-context' ]; then
+  ENV_FILE="$CONFIG_HOME/shared-context/startup.env"
+else
+  ENV_FILE="$CONFIG_HOME/shared-context/startup-$NAME.env"
+fi
 
 if [ ! -f "$UNIT_FILE" ]; then
   echo "systemd user unit '$NAME' is not installed."

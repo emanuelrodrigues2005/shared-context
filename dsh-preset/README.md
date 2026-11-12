@@ -16,14 +16,19 @@ brief the orchestrator writes plus the repository on disk.
 
 ## Requirements
 
-- The daemon is reachable (default `http://127.0.0.1:4319`): `npm start`, or the
-  `SharedContext` logon task.
+- The daemon for the current DSH home is reachable. A home with a
+  `<DSH_HOME>/shared-context/` directory uses that profile instance; every
+  other home uses the global daemon on `http://127.0.0.1:4319`. Run
+  `npm run dsh:profiles` to see the resolved port and health.
 - A DeepSeek Harness profile with `@deepseek-ai/dsh-web-app` (the agent-preset
   registry and roster UI) and the subagent seam. The Desktop profile qualifies.
-- The daemon token, which the bundle reads from the daemon's own config file:
+- The daemon token, which the bundle resolves at activation. A home with a
+  `<DSH_HOME>/shared-context/` directory uses that profile config; otherwise the
+  bundle reads the platform global config:
   `%APPDATA%\shared-context\config.json` on Windows, or
   `$XDG_CONFIG_HOME/shared-context/config.json` (falling back to
-  `~/.config/...`) elsewhere. The token is never copied into this repository.
+  `~/.config/...`) elsewhere. `SHARED_CONTEXT_CONFIG` overrides both paths.
+  The token is never copied into this repository.
 
 ## Install
 
@@ -86,8 +91,8 @@ They cannot delegate further: the orchestrator's `subagent` tool sets
 Harness Host
   └─ preset shared-context-orchestrator
        ├─ dsh-persona ......... operating contract (workflow, invariants, brief anatomy)
-       ├─ dsh-mcp-client ...... streamable HTTP -> 127.0.0.1:4319/mcp
-       │                         Authorization: Bearer <token read at activation>
+       ├─ dsh-mcp-client ...... streamable HTTP -> <resolved profile or global daemon>/mcp
+       │                         Authorization: Bearer <token from the same config>
        ├─ dsh-tool-subagent ... provider spawn, agent_preset allowlist, maxDepth 1
        └─ fs, shell, jobs, todo, ask-user, compaction
   └─ preset shared-context-implementer | reviewer | researcher
@@ -99,15 +104,22 @@ Harness Host
 - **Explicit addressing.** Preset revisions can be shared by several sessions, so
   the persona requires `project` on project-scoped calls and `actor` on
   mutations instead of relying on the MCP session binding.
-- **Token at activation.** The `Authorization` header is a `!!js` expression
-  that reads the daemon config when the preset loads. Regenerating the token
-  therefore needs a plugin reload (or a Harness restart), not an edit here. The
-  expression never throws: a missing or unreadable config yields
-  `Bearer unavailable`, so the row activates and the failure shows up as a 401
-  from the MCP client instead of a broken preset.
-- **Port follows the config.** `SHARED_CONTEXT_URL` wins when set; otherwise the
-  `url` expression reads `port` from the same config file, so a daemon moved off
-  4319 needs no bundle edit.
+- **Token and URL at activation.** The `Authorization` and `url` fields are
+  `!!js` expressions evaluated when the preset mounts. Resolution order is
+  `SHARED_CONTEXT_URL` / `SHARED_CONTEXT_TOKEN`, then an explicit
+  `SHARED_CONTEXT_CONFIG`, then `<DSH_HOME>/shared-context/config.json` when
+  that directory exists, then the platform global config (default
+  `http://127.0.0.1:4319`). A new session picks up a changed URL or token
+  without a DSH restart; an existing session keeps its current MCP connection.
+- **Fail closed.** A set-but-unreadable `SHARED_CONTEXT_CONFIG`, or a profile
+  directory whose config is missing or invalid, does not borrow the global
+  store: the URL falls back to `http://127.0.0.1:1` and the token expression
+  yields `Bearer unavailable`. The row still activates, so the failure appears
+  as a connection or 401 error instead of a broken preset. Regenerating a token
+  needs a plugin reload (or a Harness restart) for an existing session.
+- **Port follows the config.** A daemon moved off 4319 needs no bundle edit; the
+  expressions read `port` from the same config file. `SHARED_CONTEXT_URL` wins
+  when set.
 - **Portable overrides.** `SHARED_CONTEXT_URL`, `SHARED_CONTEXT_TOKEN`, and
   `SHARED_CONTEXT_CONFIG` are honored by the expressions when set in the Harness
   process environment.
@@ -121,9 +133,9 @@ primitive, so scoping is done by roots: every preset mounts
 
 Two maps declare the catalog per preset:
 
-| File | Covers |
-| --- | --- |
-| `dsh-preset/skills.json` | the four `shared-context-*` presets declared here |
+| File                              | Covers                                                                                                                                               |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dsh-preset/skills.json`          | the four `shared-context-*` presets declared here                                                                                                    |
 | `dsh-preset/prebuilt-skills.json` | the nine built-in presets in the DSH profile (`architect`, `coder`, `database`, `devops`, `planner`, `researcher`, `reviewer`, `security`, `tester`) |
 
 Build or verify the sets:
@@ -146,7 +158,7 @@ Both commands are idempotent and skip a preset that already mounts
 `dsh:presets:skills` after `tools/apply-dsh-presets.py` writes a fresh preset
 block into a profile.
 
-`tool-skill` is what gives an agent the catalog *and* the loader: a preset without
+`tool-skill` is what gives an agent the catalog _and_ the loader: a preset without
 it has no `skill` tool at all, which is why hand-written prompts have to fall back
 to reading `SKILL.md` from disk.
 
@@ -158,10 +170,16 @@ The bundle ships one offline check that needs no browser:
 node dsh-preset/scripts/check-mcp.mjs
 ```
 
-It verifies the patch declares all four presets, the daemon answers `/healthz`,
-the token opens an MCP session, all 23 tools are registered, and a read-only
-`list_projects` call succeeds. It also accepts `SHARED_CONTEXT_URL` and
-`SHARED_CONTEXT_TOKEN` for a non-default daemon.
+It verifies the patch declares all four presets, the `url` and `Authorization`
+expressions resolve the expected daemon, the daemon answers `/healthz`, the
+token opens an MCP session, all 23 tools are registered, and a read-only
+`list_projects` call succeeds. It resolves the live daemon with the same
+precedence as the preset: `SHARED_CONTEXT_URL` / `SHARED_CONTEXT_CONFIG` when
+set, then `<DSH_HOME>/shared-context/config.json`, then the global config. An
+empty personal store is accepted; `list_projects` may return no Projects until
+the first one is created in that instance. `SHARED_CONTEXT_URL`,
+`SHARED_CONTEXT_TOKEN`, and `SHARED_CONTEXT_CONFIG` are accepted for a
+non-default daemon.
 
 After install, confirm the rows:
 
@@ -175,14 +193,16 @@ a daemon that was down long enough to exhaust the MCP reconnect budget.
 
 ## Configuration
 
-| Knob                  | Where                                                                                            | Default                           |
-| --------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------- |
-| Daemon base URL       | `SHARED_CONTEXT_URL` in the Harness environment, else the `url` expression in `cordis.patch.yml` | `http://127.0.0.1:4319`           |
-| Bearer token          | `SHARED_CONTEXT_TOKEN`, else the daemon config file                                              | generated by the daemon           |
-| Explicit config file  | `SHARED_CONTEXT_CONFIG`                                                                          | platform default                  |
-| Child presets offered | `allowedAgentPresets` on the `tool-subagent` row                                                 | implementer, reviewer, researcher |
-| Default child preset  | `agentPreset`                                                                                    | `shared-context-implementer`      |
-| Delegation depth      | `maxDepth` on the `tool-subagent` row                                                            | `1`                               |
+| Knob                  | Where                                                                                                                    | Default                           |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
+| Daemon base URL       | `SHARED_CONTEXT_URL`, else `SHARED_CONTEXT_CONFIG`, else `<DSH_HOME>/shared-context/config.json`, else the global config | `http://127.0.0.1:4319`           |
+| Bearer token          | `SHARED_CONTEXT_TOKEN`, else the same config order                                                                       | generated by each store           |
+| Explicit config file  | `SHARED_CONTEXT_CONFIG`                                                                                                  | platform default                  |
+| Profile config        | `<DSH_HOME>/shared-context/config.json` when that directory exists                                                       | skipped when absent               |
+| DSH home              | `DSH_HOME` in the Harness process environment                                                                            | the home the session runs in      |
+| Child presets offered | `allowedAgentPresets` on the `tool-subagent` row                                                                         | implementer, reviewer, researcher |
+| Default child preset  | `agentPreset`                                                                                                            | `shared-context-implementer`      |
+| Delegation depth      | `maxDepth` on the `tool-subagent` row                                                                                    | `1`                               |
 
 To change the default child preset, the enabled specialists, the depth, or the
 model behavior, edit `cordis.patch.yml` and reinstall the bundle. Presets are
@@ -202,6 +222,10 @@ to these rows.
 
 ## Limits
 
+- **One orchestrator per home/store.** The preset resolves one daemon when it
+  mounts and has no cross-home view. A session talks to the store for its DSH
+  home; seeing both stores takes two sessions, one per home. Changing the
+  resolved endpoint does not move an existing session's MCP connection.
 - Children share the session working directory; parallel implementers must get
   disjoint scopes, which the persona requires but does not enforce.
 - The reviewer's read-only posture is a persona contract: `write`/`edit` are

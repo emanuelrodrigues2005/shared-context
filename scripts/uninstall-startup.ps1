@@ -33,7 +33,14 @@ if (-not $KeepWrapper) {
   if (-not $localAppData) {
     $localAppData = Join-Path $env:USERPROFILE 'AppData\Local'
   }
-  $wrapper = Join-Path $localAppData 'shared-context\start-shared-context.cmd'
+  # Mirrors install-startup.ps1: the default task keeps the historical wrapper,
+  # and every other task has its own sanitized file name.
+  $safeName = $TaskName -replace '[^A-Za-z0-9._-]', '-'
+  if ($TaskName -eq 'SharedContext') {
+    $wrapper = Join-Path $localAppData 'shared-context\start-shared-context.cmd'
+  } else {
+    $wrapper = Join-Path $localAppData ('shared-context\start-task-{0}.cmd' -f $safeName)
+  }
   if (Test-Path -LiteralPath $wrapper) {
     Remove-Item -LiteralPath $wrapper -Force
     Write-Host "Removed startup wrapper $wrapper."

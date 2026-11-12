@@ -21,7 +21,7 @@ test('glossary and ADRs exist and are well formed', () => {
 
   const adrDir = path.join(root, 'docs', 'adr');
   const adrs = fs.readdirSync(adrDir).filter((name) => name.endsWith('.md'));
-  assert.equal(adrs.length, 8);
+  assert.equal(adrs.length, 9);
   for (const name of adrs) {
     const body = fs.readFileSync(path.join(adrDir, name), 'utf8');
     assert.match(body, /^# /, `ADR lacks a title: ${name}`);

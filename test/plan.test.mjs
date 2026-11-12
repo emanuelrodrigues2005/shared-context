@@ -43,7 +43,7 @@ test('plan index links every spec and milestone', () => {
 test('plan ADR links resolve', () => {
   const index = fs.readFileSync(indexPath, 'utf8');
   const links = [...index.matchAll(/\]\((\.\.\/docs\/adr\/[^)]+)\)/g)].map((m) => m[1]);
-  assert.ok(links.length >= 8, 'expected at least eight ADR links');
+  assert.ok(links.length >= 9, 'expected at least nine ADR links');
   for (const link of links) {
     assert.ok(fs.existsSync(path.resolve(planDir, link)), `broken ADR link: ${link}`);
   }

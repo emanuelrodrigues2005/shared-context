@@ -11,11 +11,65 @@ The nightly scheduler and **Backup now** in Project settings use the same proced
 copy a live `shared-context.db` with a file copy while the daemon is running; use a
 snapshot.
 
+These are the global/legacy paths, used by the empresa instance on `127.0.0.1:4319`. A DSH
+home with its own `shared-context` instance has a different root; see
+[Profile stores](#profile-stores) below.
+
+## Profile stores
+
+A DSH home is a profile instance when `<DSH_HOME>/shared-context/` exists. Its config and
+data live together under that directory:
+
+| Purpose     | Path                                               |
+| ----------- | -------------------------------------------------- |
+| Config      | `<DSH_HOME>/shared-context/config.json`            |
+| Data root   | `<DSH_HOME>/shared-context`                        |
+| Database    | `<DSH_HOME>/shared-context/data/shared-context.db` |
+| Attachments | `<DSH_HOME>/shared-context/data/attachments/`      |
+| Backups     | `<DSH_HOME>/shared-context/backups/`               |
+| Logs        | `<DSH_HOME>/shared-context/logs/`                  |
+
+For the current `pessoal` home the root is
+`~/.local/share/dsh-profiles/pessoal/shared-context`, and its daemon listens on
+`127.0.0.1:4320`.
+
+Stop a profile instance before touching its files:
+
+```sh
+npm run dsh:profiles:stop -- --home pessoal
+npm run dsh:profiles                 # confirm the profile is not healthy
+```
+
+Restore the database and attachment mirror exactly as below, substituting the profile
+paths. For Linux and macOS:
+
+```sh
+PROFILE="$HOME/.local/share/dsh-profiles/pessoal/shared-context"
+rsync -a --ignore-existing "$PROFILE/backups/attachments/" "$PROFILE/data/attachments/"
+```
+
+Start it again and verify health:
+
+```sh
+npm run dsh:profiles:start -- --home pessoal
+curl -s http://127.0.0.1:4320/healthz
+```
+
+The start command runs the daemon detached on this machine because the sandbox cannot reach
+`systemctl --user`. For logon startup, install the profile unit from a desktop terminal
+after stopping the detached daemon, using `scripts/install-startup.sh --name ...` with the
+profile's `--config` and `--port` only. The config already owns `data_dir`, and
+`--data-dir` would set `SHARED_CONTEXT_DATA_DIR` in the startup environment and override
+it. The installer gives a non-default name its own unit and env file. The profile's config
+file is the source of truth for `port` and `data_dir`; do not start it with
+`SHARED_CONTEXT_PORT`.
+
 ## Before restoring
 
 1. Stop the daemon: close its console, or run `npm run startup:uninstall` if it was
    installed at logon (`scripts/uninstall-startup.ps1` on Windows,
-   `scripts/uninstall-startup.sh` on Linux). Stopping the unit does not kill an
+   `scripts/uninstall-startup.sh` on Linux). For a profile instance, use
+   `npm run dsh:profiles:stop -- --home <name>`. Stopping the unit does not kill an
    already-running daemon; end the `node` process for this workspace if necessary.
 2. Make a copy of the current `data/` directory aside, in case the restore is the wrong
    choice.
@@ -54,8 +108,10 @@ attachments that existed before it.
 ## Start and verify
 
 1. Start the daemon with `npm start`, or reinstall startup with `npm run startup:install`.
-2. Check `http://127.0.0.1:4319/healthz`; `ok` must be `true`, `db.journal_mode` should be
-   `wal`, and `last_backup` should describe the snapshot you restored.
+   For a profile, use `npm run dsh:profiles:start -- --home <name>`.
+2. Check `http://127.0.0.1:4319/healthz` (or the profile's port, `4320` for `pessoal`); `ok`
+   must be `true`, `db.journal_mode` should be `wal`, and `last_backup` should describe the
+   snapshot you restored.
 3. Open the board, spot-check a few Issues, open an attachment, and confirm Activity is
    present.
 4. Run a fresh **Backup now** after verifying, so the next snapshot reflects the restored
@@ -65,9 +121,11 @@ attachments that existed before it.
 
 - Install Node 24 and run `npm install` + `npm run build` in this repository.
 - Copy the `shared-context.db` snapshot and the attachment mirror into the new machine's
-  data directory. Do not copy `config.json` across platforms: a `data_dir` written for
-  Windows is rejected on Linux (and vice versa) rather than creating a literal
-  `C:\Users\...` directory. Keep the paths default or set them again.
+  data directory. For a profile, restore under `<DSH_HOME>/shared-context/` and keep that
+  home's own config; do not copy the empresa config over it. Do not copy `config.json`
+  across platforms: a `data_dir` written for Windows is rejected on Linux (and vice versa)
+  rather than creating a literal `C:\Users\...` directory. Keep the paths default or set
+  them again.
 - Run the daemon once so it creates `config.json` (`%APPDATA%\shared-context\` on Windows,
   `${XDG_CONFIG_HOME:-~/.config}/shared-context/` elsewhere) with a new MCP token, then
   update MCP clients with that token from Global settings.

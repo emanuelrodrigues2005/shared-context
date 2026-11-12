@@ -5,4 +5,8 @@
     - id: shared-context
       name: dsh-plugin-shared-context
       config:
-        baseUrl: http://127.0.0.1:4319
+        # `auto` resolves per activation: SHARED_CONTEXT_URL, then this row's
+        # explicit origin, then SHARED_CONTEXT_CONFIG, then
+        # $DSH_HOME/shared-context/config.json, then the legacy global 4319
+        # config. A loopback origin here pins the daemon.
+        baseUrl: auto

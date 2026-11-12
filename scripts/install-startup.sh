@@ -84,7 +84,13 @@ NODE_MAJOR="$("$NODE" -p 'process.versions.node.split(".")[0]')"
 CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 UNIT_DIR="$CONFIG_HOME/systemd/user"
 UNIT_FILE="$UNIT_DIR/$NAME.service"
-ENV_FILE="$CONFIG_HOME/shared-context/startup.env"
+# One env file per unit: the default name keeps the historical path, and any
+# other unit gets its own file so two daemons cannot overwrite each other.
+if [ "$NAME" = 'shared-context' ]; then
+  ENV_FILE="$CONFIG_HOME/shared-context/startup.env"
+else
+  ENV_FILE="$CONFIG_HOME/shared-context/startup-$NAME.env"
+fi
 
 # systemd treats "%" as a specifier introducer, so it must be doubled.
 escape_unit() { local value="$1"; printf '%s' "${value//%/%%}"; }

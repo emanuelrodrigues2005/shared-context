@@ -40,7 +40,15 @@ $localAppData = $env:LOCALAPPDATA
 if (-not $localAppData) {
   $localAppData = Join-Path $env:USERPROFILE 'AppData\Local'
 }
-$wrapper = Join-Path $localAppData 'shared-context\start-shared-context.cmd'
+# One wrapper per task: the default task keeps the historical path, and any
+# other task name gets a sanitized file name so tasks cannot overwrite each
+# other's data-dir/config environment.
+$safeName = $TaskName -replace '[^A-Za-z0-9._-]', '-'
+if ($TaskName -eq 'SharedContext') {
+  $wrapper = Join-Path $localAppData 'shared-context\start-shared-context.cmd'
+} else {
+  $wrapper = Join-Path $localAppData ('shared-context\start-task-{0}.cmd' -f $safeName)
+}
 
 function Resolve-FullPath([string]$Value) {
   if (-not $Value) { return $null }

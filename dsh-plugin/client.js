@@ -336,18 +336,25 @@ window.__ModuleLoader__.load({
      * Read the Host-published boot payload.
      *
      * The proxy route is fixed so a page that predates a plugin reload still
-     * reaches the current mount; only the daemon origin comes from the payload.
+     * reaches the current mount; only the daemon origin and the home label come
+     * from the payload.
      *
-     * @returns {{route: string, baseUrl: string}} proxy mount and daemon origin.
+     * @returns {{route: string, baseUrl: string, home: string | null}} proxy mount,
+     *   daemon origin, and the DSH home basename when the Host resolved one.
      */
     function bootConfig() {
       const config = globalThis.__DSH_SHARED_CONTEXT__;
+      const home =
+        config && typeof config.home === 'string' && config.home.trim() !== ''
+          ? config.home.trim()
+          : null;
       return {
         route: PROXY_ROUTE,
         baseUrl:
           config && typeof config.baseUrl === 'string'
             ? config.baseUrl
             : 'http://127.0.0.1:4319',
+        home,
       };
     }
 
@@ -1611,6 +1618,7 @@ window.__ModuleLoader__.load({
         if (board.data && board.data.project) return board.data.project;
         return projects.items.find((project) => project.key === projectKey) || null;
       }, [board.data, projects.items, projectKey]);
+      const home = bootConfig().home;
 
       const columns = board.data && Array.isArray(board.data.columns) ? board.data.columns : [];
       const hasProjects = projects.items.length > 0;
@@ -1637,6 +1645,8 @@ window.__ModuleLoader__.load({
               h('span', null, connection.phase === 'ready' ? t('status.online') : connection.phase === 'offline' ? t('status.offline') : t('status.connecting')),
               connection.version ? h('span', { className: 'sc-sep' }, '·') : null,
               connection.version ? h('span', null, `v${connection.version}`) : null,
+              home ? h('span', { className: 'sc-sep' }, '·') : null,
+              home ? h('span', { title: 'DSH home' }, home) : null,
               currentProject ? h('span', { className: 'sc-sep' }, '·') : null,
               currentProject ? h('span', null, currentProject.name) : null,
             ),
